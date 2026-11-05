@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
-  ChevronDown, ChevronRight, Edit2, RefreshCw, Info,
-  Calendar, Layers, Database, Building, HelpCircle, Package, Truck, Activity, Sparkles
+  RefreshCw,
+  Building2,
+  CalendarDays,
+  Layers3,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Package,
+  Truck,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
 } from "lucide-react";
 import { Capacidade, Filters } from "../types";
 import EditCapacityModal from "./EditCapacityModal";
@@ -23,117 +32,248 @@ const CATEGORIAS_POR_CD: Record<string, string[]> = {
   "941": ["Suprimentos"],
 };
 
-// ✅ Função para calcular a semana do mês (1-5)
 function getWeekOfMonth(day: number): number {
   return Math.ceil(day / 7);
 }
 
-function formatNumber(num: number | null | undefined): string {
-  if (num === null || num === undefined) return "--";
-  return num.toLocaleString("pt-BR");
+function number(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "--";
+  return n.toLocaleString("pt-BR");
 }
+
+function amount(v: number | string | null | undefined): number {
+  if (v === null || v === undefined) return 0;
+  const val = typeof v === "number" ? v : Number(v);
+  return Number.isNaN(val) ? 0 : val;
+}
+
+function dateLabel(dateStr: string): string {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length < 3) return dateStr;
+  const [y, m, d] = parts;
+  const dt = new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0);
+  const wd = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][dt.getDay()] || "";
+  return `${d}/${m}/${y} (${wd})`;
+}
+
+const th = "px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 select-none";
+const td = "px-4 py-3 text-sm text-slate-700 dark:text-slate-200";
+const selectClass = "w-full rounded-xl bg-slate-500/5 dark:bg-slate-500/10 hover:bg-slate-500/10 dark:hover:bg-slate-500/15 px-3.5 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-colors cursor-pointer border-0";
 
 interface CapacidadesProps {
   activeTab: "inbound" | "outbound";
   user: any;
   showNotification: (msg: string) => void;
-  onOpenMetasModal: () => void;
+  onOpenMetasModal?: () => void;
   onTabChange: (tab: "inbound" | "outbound") => void;
+  theme?: "light" | "dark";
 }
 
-export default function Capacidades({ activeTab, user, showNotification, onOpenMetasModal, onTabChange }: CapacidadesProps) {
-  const [rawCapacidades, setRawCapacidades] = useState<Capacidade[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+export default function Capacidades({
+  activeTab,
+  user,
+  showNotification,
+  onTabChange,
+  theme = "dark",
+}: CapacidadesProps) {
+  const [records, setRecords] = useState<Capacidade[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({ cd: "all", mes: "all", categoria: "all" });
-  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editTargetDay, setEditTargetDay] = useState<any>(undefined);
-  const [showKpis, setShowKpis] = useState(false);
-  const [hoveredDay, setHoveredDay] = useState<{
-    normal: number;
-    remunerada: number;
-    total: number;
-    x: number;
-    y: number;
-    cd: string | number;
-    categoria: string;
-    dateStr: string;
-  } | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editing, setEditing] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(undefined);
+  const [saving, setSaving] = useState(false);
+
+  const isInbound = activeTab === "inbound";
 
   const fetchCapacidades = useCallback(async (silent: boolean = false) => {
-    if (!silent) setIsLoading(true);
-    setErrorMsg(null);
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
     try {
-      const headers: Record<string, string> = { 
-        'Accept': 'application/json', 
-        'Content-Type': 'application/json' 
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
       };
       if (user?.token) {
         headers['Authorization'] = `Bearer ${user.token}`;
       }
       const response = await fetch(`${API_BASE_URL}${CAPACIDADES_ENDPOINT}`, {
-        method: 'GET', 
+        method: 'GET',
         headers,
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(10000),
       });
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      console.log('📊 Dados recebidos:', data.length);
-      setRawCapacidades(data);
-    } catch (err: any) { 
-      setErrorMsg(err.message); 
-      setRawCapacidades([]); 
-    } finally { 
-      if (!silent) setIsLoading(false); 
+      setRecords(data);
+    } catch (err: any) {
+      setError(err.message || "Erro ao carregar dados.");
+      if (!silent) {
+        setRecords([]);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [user?.token]);
 
-  useEffect(() => { fetchCapacidades(); }, [fetchCapacidades]);
+  useEffect(() => {
+    fetchCapacidades();
+  }, [fetchCapacidades]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       fetchCapacidades(true);
-    }, 5000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [fetchCapacidades]);
 
-  // ✅ handleSaveCapacity CORRIGIDO - Usa PUT em vez de POST
-  const handleSaveCapacity = async (payload: any) => {
-    if (!user || user.role !== "admin") { 
-      showNotification("❌ Apenas administradores podem editar!"); 
-      return; 
+  const options = useMemo(() => {
+    const cds = new Set<string>();
+    const meses = new Set<string>();
+    const categorias = new Set<string>();
+
+    records.forEach(item => {
+      if (item.cd !== undefined && item.cd !== null) cds.add(String(item.cd));
+      if (item.dataMovimentacao) meses.add(item.dataMovimentacao.substring(0, 7));
+      if (item.categoria) categorias.add(item.categoria);
+    });
+
+    return {
+      cds: Array.from(cds).sort((a, b) => Number(a) - Number(b)),
+      meses: Array.from(meses).sort(),
+      categorias: Array.from(categorias).sort(),
+    };
+  }, [records]);
+
+  const categories = useMemo(() => {
+    if (filters.cd === "all") {
+      return options.categorias;
     }
+    return CATEGORIAS_POR_CD[filters.cd] || options.categorias;
+  }, [filters.cd, options.categorias]);
+
+  const filtered = useMemo(() => {
+    return records.filter(item => {
+      const mCd = filters.cd === "all" || String(item.cd) === filters.cd;
+      const mMes = filters.mes === "all" || item.dataMovimentacao.startsWith(filters.mes);
+      const mCat = filters.categoria === "all" || item.categoria === filters.categoria;
+      return mCd && mMes && mCat;
+    });
+  }, [records, filters]);
+
+  const summary = useMemo(() => {
+    let normal = 0;
+    let extra = 0;
+    let fracionado = 0;
+    let fechado = 0;
+
+    filtered.forEach(item => {
+      normal += amount(item.capacidadeInbound);
+      extra += amount(item.recebimentoRemunerado);
+      fracionado += amount(item.capacidadeOutboundFracionado);
+      fechado += amount(item.capacidadeOutboundFechado);
+    });
+
+    return { normal, extra, fracionado, fechado };
+  }, [filtered]);
+
+  const months = useMemo(() => {
+    const monthsMap: Record<string, Capacidade[]> = {};
+    filtered.forEach(item => {
+      const k = item.dataMovimentacao.substring(0, 7);
+      if (!monthsMap[k]) monthsMap[k] = [];
+      monthsMap[k].push(item);
+    });
+
+    const mn: Record<string, string> = {
+      "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+      "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+      "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
+    };
+
+    return Object.keys(monthsMap).sort().map(k => {
+      const items = [...monthsMap[k]].sort((a, b) => a.dataMovimentacao.localeCompare(b.dataMovimentacao));
+      const y = k.substring(0, 4);
+      const mon = k.substring(5, 7);
+      const title = `${mn[mon] || "Mês"} de ${y}`;
+
+      const uniqueCds = Array.from(new Set(items.map(x => x.cd).filter(Boolean)));
+      const uniqueCats = Array.from(new Set(items.map(x => x.categoria).filter(Boolean)));
+
+      const cd = uniqueCds.length === 1 ? `CD ${uniqueCds[0]}` : "Vários CDs";
+      const category = uniqueCats.length === 1 ? uniqueCats[0] : "Múltiplas";
+
+      const inbound = items.reduce((acc, curr) => acc + amount(curr.capacidadeInbound) + amount(curr.recebimentoRemunerado), 0);
+      const frac = items.reduce((acc, curr) => acc + amount(curr.capacidadeOutboundFracionado), 0);
+      const fech = items.reduce((acc, curr) => acc + amount(curr.capacidadeOutboundFechado), 0);
+
+      return {
+        key: k,
+        title,
+        cd,
+        category,
+        inbound,
+        frac,
+        fech,
+        items,
+      };
+    });
+  }, [filtered]);
+
+  const openEdit = (item: Capacidade) => {
+    if (!user || user.role !== "admin") {
+      showNotification("❌ Apenas administradores podem editar!");
+      return;
+    }
+    setEditTarget({
+      id: item.id,
+      dateStr: dateLabel(item.dataMovimentacao),
+      capacidadeInbound: item.capacidadeInbound,
+      recebimentoRemunerado: item.recebimentoRemunerado,
+      capacidadeOutboundFracionado: item.capacidadeOutboundFracionado,
+      capacidadeOutboundFechado: item.capacidadeOutboundFechado,
+      cd: item.cd,
+      categoria: item.categoria,
+      raw: item,
+    });
+    setEditing(true);
+  };
+
+  const save = async (payload: any) => {
+    if (!user || user.role !== "admin") {
+      showNotification("❌ Apenas administradores podem editar!");
+      return;
+    }
+    setSaving(true);
     try {
       let rawItem = payload.raw;
-      
-      // Se não veio raw, busca pelo id
       if (!rawItem && payload.id) {
-        const found = rawCapacidades.find(item => item.id === payload.id);
-        if (found) {
-          rawItem = found;
-        }
+        rawItem = records.find(i => i.id === payload.id);
       }
-      
+      if (!rawItem && editTarget?.raw) {
+        rawItem = editTarget.raw;
+      }
       if (!rawItem) {
         showNotification("❌ Dados do registro ausentes.");
-        console.error('❌ rawItem não encontrado:', payload);
         return;
       }
-      
-      console.log('📦 rawItem encontrado:', rawItem);
-      
+
       const dataMovimentacao = rawItem.dataMovimentacao;
       const parts = dataMovimentacao.split("-");
       const ano = parseInt(parts[0], 10);
       const mes = parseInt(parts[1], 10);
       const dia = parseInt(parts[2], 10);
-      
       const semana = getWeekOfMonth(dia);
-      
-      console.log(`📅 Data: ${dataMovimentacao} -> Semana ${semana} (dia ${dia})`);
 
-      // ✅ Monta o body com os dados atualizados
       const body: any = {
         id: rawItem.id,
         dataMovimentacao: dataMovimentacao,
@@ -142,697 +282,364 @@ export default function Capacidades({ activeTab, user, showNotification, onOpenM
         semana: semana,
         ano: ano,
         mes: mes,
-        dia: dia
+        dia: dia,
       };
 
-      // ✅ Usa os nomes corretos dos campos
       if (activeTab === "inbound") {
-        body.capacidadeInbound = payload.capacidadeInbound !== undefined && payload.capacidadeInbound !== null 
-          ? Number(payload.capacidadeInbound) 
+        body.capacidadeInbound = payload.capacidadeInbound !== undefined && payload.capacidadeInbound !== null
+          ? Number(payload.capacidadeInbound)
           : rawItem.capacidadeInbound || 0;
-        body.recebimentoRemunerado = payload.recebimentoRemunerado !== undefined && payload.recebimentoRemunerado !== null 
-          ? Number(payload.recebimentoRemunerado) 
+        body.recebimentoRemunerado = payload.recebimentoRemunerado !== undefined && payload.recebimentoRemunerado !== null
+          ? Number(payload.recebimentoRemunerado)
           : rawItem.recebimentoRemunerado || null;
         body.capacidadeOutboundFracionado = rawItem.capacidadeOutboundFracionado || 0;
         body.capacidadeOutboundFechado = rawItem.capacidadeOutboundFechado || 0;
-      } else if (activeTab === "outbound") {
+      } else {
         body.capacidadeInbound = rawItem.capacidadeInbound || 0;
-        body.capacidadeOutboundFracionado = payload.capacidadeOutboundFracionado !== undefined && payload.capacidadeOutboundFracionado !== null 
-          ? Number(payload.capacidadeOutboundFracionado) 
+        body.capacidadeOutboundFracionado = payload.capacidadeOutboundFracionado !== undefined && payload.capacidadeOutboundFracionado !== null
+          ? Number(payload.capacidadeOutboundFracionado)
           : rawItem.capacidadeOutboundFracionado || 0;
-        body.capacidadeOutboundFechado = payload.capacidadeOutboundFechado !== undefined && payload.capacidadeOutboundFechado !== null 
-          ? Number(payload.capacidadeOutboundFechado) 
+        body.capacidadeOutboundFechado = payload.capacidadeOutboundFechado !== undefined && payload.capacidadeOutboundFechado !== null
+          ? Number(payload.capacidadeOutboundFechado)
           : rawItem.capacidadeOutboundFechado || 0;
       }
-
-      console.log('📤 Enviando para API (PUT):', body);
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (user?.token) {
         headers["Authorization"] = `Bearer ${user.token}`;
       }
 
-      // ✅ CORRIGIDO: Usa PUT em vez de POST
       const res = await fetch(`${API_BASE_URL}${CAPACIDADES_ENDPOINT}/${rawItem.id}`, {
         method: "PUT",
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
-      
+
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`HTTP ${res.status} - ${errorText}`);
       }
-      
+
       showNotification("✅ Capacidade atualizada!");
-      await fetchCapacidades();
-    } catch (err) {
-      console.error('❌ Erro ao salvar:', err);
-      showNotification(`❌ Erro ao salvar: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+      setEditing(false);
+      setEditTarget(undefined);
+      await fetchCapacidades(true);
+    } catch (err: any) {
+      showNotification(`❌ Erro ao salvar: ${err.message || "Erro desconhecido"}`);
+    } finally {
+      setSaving(false);
     }
-  };
-
-  const filterOptions = useMemo(() => {
-    const cds = new Set<number>(), meses = new Set<string>(), categorias = new Set<string>();
-    rawCapacidades.forEach(i => { 
-      if (i.cd) cds.add(i.cd); 
-      if (i.dataMovimentacao) meses.add(i.dataMovimentacao.substring(0,7)); 
-      if (i.categoria) categorias.add(i.categoria); 
-    });
-    return { 
-      cds: Array.from(cds).sort((a,b) => a-b), 
-      meses: Array.from(meses).sort(), 
-      categorias: Array.from(categorias).sort() 
-    };
-  }, [rawCapacidades]);
-
-  const processedData = useMemo(() => {
-    const filtered = rawCapacidades.filter(i => {
-      const mCd = filters.cd === "all" || String(i.cd) === filters.cd;
-      const mMes = filters.mes === "all" || i.dataMovimentacao.startsWith(filters.mes);
-      const mCat = filters.categoria === "all" || i.categoria === filters.categoria;
-      return mCd && mMes && mCat;
-    });
-    
-    const monthsMap: Record<string, Capacidade[]> = {};
-    filtered.forEach(i => { 
-      const k = i.dataMovimentacao.substring(0,7); 
-      if (!monthsMap[k]) monthsMap[k] = []; 
-      monthsMap[k].push(i); 
-    });
-    
-    const mn: Record<string,string> = {
-      "01":"Janeiro","02":"Fevereiro","03":"Março","04":"Abril",
-      "05":"Maio","06":"Junho","07":"Julho","08":"Agosto",
-      "09":"Setembro","10":"Outubro","11":"Novembro","12":"Dezembro"
-    };
-    
-    return Object.keys(monthsMap).sort().map(k => {
-      const items = monthsMap[k];
-      const y = k.substring(0,4);
-      const mon = k.substring(5,7);
-      const name = `${mn[mon]||"Mês"} de ${y}`;
-      
-      const sortedDays = [...items].sort((a,b) => a.dataMovimentacao.localeCompare(b.dataMovimentacao));
-      const wd = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-      
-      const days = sortedDays.map(x => { 
-        const d = new Date(x.dataMovimentacao+"T12:00:00");
-        const dia = x.dataMovimentacao.split("-")[2];
-        const mesNum = x.dataMovimentacao.split("-")[1];
-        const anoNum = x.dataMovimentacao.split("-")[0];
-        const semana = getWeekOfMonth(parseInt(dia));
-        
-        return { 
-          id: x.id, 
-          dateStr: `${dia}/${mesNum}/${anoNum} (${wd[d.getDay()]})`,
-          dia: parseInt(dia),
-          mes: parseInt(mesNum),
-          ano: parseInt(anoNum),
-          semana: semana,
-          weekday: wd[d.getDay()], 
-          capacidadeInbound: x.capacidadeInbound, 
-          capacidadeOutboundFracionado: x.capacidadeOutboundFracionado, 
-          capacidadeOutboundFechado: x.capacidadeOutboundFechado, 
-          recebimentoRemunerado: x.recebimentoRemunerado,
-          raw: x 
-        }; 
-      });
-      
-      const uniqueCds = Array.from(new Set(items.map(x => x.cd).filter(Boolean))).sort((a,b) => Number(a) - Number(b));
-      const uniqueCats = Array.from(new Set(items.map(x => x.categoria).filter(Boolean)));
-      
-      return { 
-        monthKey: k, 
-        monthName: name, 
-        capacidadeInbound: items.reduce((a,c) => a + (c.capacidadeInbound || 0) + (c.recebimentoRemunerado || 0), 0), 
-        capacidadeOutboundFracionado: items.reduce((a,c) => a + (c.capacidadeOutboundFracionado || 0), 0), 
-        capacidadeOutboundFechado: items.reduce((a,c) => a + (c.capacidadeOutboundFechado || 0), 0), 
-        days, 
-        cd: uniqueCds.length === 1 ? uniqueCds[0] : null, 
-        categoria: uniqueCats.length === 1 ? uniqueCats[0] : "Múltiplas",
-        uniqueCds,
-        uniqueCats
-      };
-    });
-  }, [rawCapacidades, filters]);
-
-  const totalSummary = useMemo(() => {
-    let inbound = 0, frac = 0, fech = 0, remunerada = 0;
-    
-    const filtered = rawCapacidades.filter(i => {
-      const mCd = filters.cd === "all" || String(i.cd) === filters.cd;
-      const mMes = filters.mes === "all" || i.dataMovimentacao.startsWith(filters.mes);
-      const mCat = filters.categoria === "all" || i.categoria === filters.categoria;
-      return mCd && mMes && mCat;
-    });
-    
-    filtered.forEach(i => { 
-      inbound += (i.capacidadeInbound || 0) + (i.recebimentoRemunerado || 0); 
-      frac += i.capacidadeOutboundFracionado || 0; 
-      fech += i.capacidadeOutboundFechado || 0; 
-      remunerada += i.recebimentoRemunerado || 0;
-    });
-    
-    return { inbound, outboundFracionado: frac, outboundFechado: fech, outbound: frac + fech, remunerada };
-  }, [rawCapacidades, filters]);
-
-  const handleEditClick = (e: React.MouseEvent, day: any) => { 
-    e.stopPropagation(); 
-    if (!user || user.role !== "admin") {
-      showNotification("❌ Apenas administradores podem editar!");
-      return; 
-    }
-    setEditTargetDay({ 
-      id: day.id, 
-      dateStr: day.dateStr, 
-      dia: day.dia,
-      mes: day.mes,
-      ano: day.ano,
-      semana: day.semana,
-      capacidadeInbound: day.capacidadeInbound, 
-      recebimentoRemunerado: day.recebimentoRemunerado,
-      capacidadeOutboundFracionado: day.capacidadeOutboundFracionado, 
-      capacidadeOutboundFechado: day.capacidadeOutboundFechado, 
-      raw: day.raw 
-    }); 
-    setIsEditOpen(true); 
-  };
-
-  const accentTheme = activeTab === "inbound" ? {
-    bgButton: "bg-blue-600 hover:bg-blue-700", 
-    textAccent: "text-blue-600 font-semibold", 
-    glow: "shadow-blue-500/10", 
-    rowHighlight: "border-l-4 border-blue-600", 
-    bgHover: "hover:bg-blue-50/40", 
-    tabActive: "bg-blue-600 text-white shadow-md"
-  } : {
-    bgButton: "bg-indigo-600 hover:bg-indigo-700", 
-    textAccent: "text-indigo-600 font-semibold", 
-    glow: "shadow-indigo-500/10", 
-    rowHighlight: "border-l-4 border-indigo-600", 
-    bgHover: "hover:bg-purple-50/40", 
-    tabActive: "bg-indigo-600 text-white shadow-md"
   };
 
   return (
-    <>
-      <div className="">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-4 px-6 py-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5 text-slate-400" /> CD
-            </label>
-            <select
-              value={filters.cd}
-              onChange={e => {
-                const newCd = e.target.value;
-                setFilters(f => {
-                  const allowed = newCd === "all"
-                    ? Object.values(CATEGORIAS_POR_CD).flat()
-                    : (CATEGORIAS_POR_CD[newCd] || []);
-                  const newCat = (f.categoria === "all" || allowed.includes(f.categoria)) ? f.categoria : "all";
-                  return { ...f, cd: newCd, categoria: newCat };
-                });
-              }}
-              className="bg-slate-50 hover:bg-slate-100/70 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
-            >
-              <option value="all">Todos os CDs</option>
-              {filterOptions.cds.map(cd => (
-                <option key={cd} value={String(cd)}>CD {cd}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" /> Mês
-            </label>
-            <select
-              value={filters.mes}
-              onChange={e => setFilters(f => ({ ...f, mes: e.target.value }))}
-              className="bg-slate-50 hover:bg-slate-100/70 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
-            >
-              <option value="all">Todos os Meses</option>
-              {filterOptions.meses.map(m => {
-                const [y, mon] = m.split("-");
-                const n: Record<string, string> = {
-                  "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr", "05": "Mai", "06": "Jun",
-                  "07": "Jul", "08": "Ago", "09": "Set", "10": "Out", "11": "Nov", "12": "Dez"
-                };
-                return <option key={m} value={m}>{n[mon]} {y}</option>;
-              })}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-slate-400" /> Categoria
-            </label>
-            <select
-              value={filters.categoria}
-              onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
-              className="bg-slate-50 hover:bg-slate-100/70 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
-            >
-              <option value="all">Todas</option>
-              {(filters.cd === "all"
-                ? filterOptions.categorias
-                : (CATEGORIAS_POR_CD[filters.cd] || [])
-              ).map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-end gap-2">
-            {/* <button
-              onClick={() => fetchCapacidades()}
-              className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold text-xs text-slate-600 shadow-sm transition-all active:scale-95 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Sincronizar
-            </button> */}
-          </div>
-
-          <div className="flex items-end justify-end">
-            
-          </div>
-        </div>
-      </div>
-
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6 flex flex-col gap-6">
+    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 space-y-6 text-slate-900 dark:text-slate-100">
+      <div className="max-w-7xl mx-auto w-full space-y-6">
         
-        {/* Info Banner com botões Inbound/Outbound */}
-        <div className="border-b border-slate-200/80 dark:border-slate-700/80 pb-2 flex items-center justify-between">
-          <div className="flex gap-6">
-            <button
-              id="tab-inbound"
-              onClick={() => onTabChange("inbound")}
-              className={`px-2 py-2 text-xs font-bold transition-all duration-200 cursor-pointer relative ${
-                activeTab === "inbound" 
-                  ? "text-blue-600 dark:text-blue-400 font-extrabold" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-300"
-              }`}
-            >
-              Inbound
-              {activeTab === "inbound" && (
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full" />
-              )}
-            </button>
+        {/* CABEÇALHO SÉRIO E DISCRETO */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Planejamento operacional
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              Capacidades logísticas
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Consulta e manutenção das capacidades por centro de distribuição.
+            </p>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => void fetchCapacidades(true)} 
+            disabled={refreshing || loading} 
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-500/10 hover:bg-slate-500/15 text-slate-700 dark:text-slate-200 px-3.5 text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> 
+            <span>Atualizar dados</span>
+          </button>
+        </header>
+
+        {/* SEÇÃO DE FILTROS SEM BORDAS */}
+        <section className="rounded-2xl bg-white/70 dark:bg-slate-900/60 p-4 sm:p-5 shadow-xs backdrop-blur-md transition-colors">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                <Building2 className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" /> Centro de distribuição
+              </span>
+              <select 
+                className={selectClass} 
+                value={filters.cd} 
+                onChange={e => { 
+                  const cd = e.target.value; 
+                  setFilters(f => ({ ...f, cd, categoria: f.categoria === "all" || cd === "all" || (CATEGORIAS_POR_CD[cd] ?? []).includes(f.categoria) ? f.categoria : "all" })); 
+                }}
+              >
+                <option value="all">Todos os CDs</option>
+                {options.cds.map(cd => <option key={cd} value={cd}>CD {cd}</option>)}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                <CalendarDays className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" /> Competência
+              </span>
+              <select 
+                className={selectClass} 
+                value={filters.mes} 
+                onChange={e => setFilters(f => ({ ...f, mes: e.target.value }))}
+              >
+                <option value="all">Todos os meses</option>
+                {options.meses.map(m => { 
+                  const [y, mo] = m.split("-").map(Number); 
+                  return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>; 
+                })}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                <Layers3 className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" /> Categoria
+              </span>
+              <select 
+                className={selectClass} 
+                value={filters.categoria} 
+                onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
+              >
+                <option value="all">Todas as categorias</option>
+                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </label>
+          </div>
+        </section>
+
+        {/* CONTAINER PRINCIPAL SEM BORDAS VINCULADAS */}
+        <section className="rounded-2xl bg-white/70 dark:bg-slate-900/60 p-5 sm:p-6 shadow-xs backdrop-blur-md transition-colors space-y-6">
+          
+          {/* TAB BAR (SEGMENTED CONTROL MODERNO SEM BORDAS) & STATUS */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Tipo de operação">
+              {(["inbound", "outbound"] as const).map(tab => (
+                <button 
+                  key={tab} 
+                  type="button" 
+                  role="tab" 
+                  aria-selected={activeTab === tab} 
+                  onClick={() => onTabChange(tab)} 
+                  className={`flex items-center gap-2 px-4 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    activeTab === tab 
+                      ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {tab === "inbound" ? <ArrowDownToLine className="h-3.5 w-3.5" /> : <ArrowUpFromLine className="h-3.5 w-3.5" />}
+                  <span>{tab === "inbound" ? "Inbound" : "Outbound"}</span>
+                </button>
+              ))}
+            </div>
             
-            <button
-              id="tab-outbound"
-              onClick={() => onTabChange("outbound")}
-              className={`px-2 py-2 text-xs font-bold transition-all duration-200 cursor-pointer relative ${
-                activeTab === "outbound" 
-                  ? "text-indigo-600 dark:text-indigo-400 font-extrabold" 
-                  : "text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300"
-              }`}
-            >
-              Outbound
-              {activeTab === "outbound" && (
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-full" />
-              )}
-            </button>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+              {number(filtered.length)} registros · {months.length} meses
+            </span>
           </div>
 
-          <button
-            onClick={() => setShowKpis(!showKpis)}
-            className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider bg-white dark:bg-slate-800 hover:bg-slate-50 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer text-slate-600 dark:text-slate-300"
-            title={showKpis ? "Ocultar Cards" : "Exibir Cards"}
-          >
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showKpis ? "rotate-180" : ""}`} />
-            <span>{showKpis ? "Ocultar Cards" : "Exibir Cards"}</span>
-          </button>
-        </div>
-
-        {/* ✅ Bento Grid de KPIs - DINÂMICO CONFORME ABA */}
-        <AnimatePresence initial={false}>
-          {showKpis && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0, marginBottom: 0 }}
-              animate={{ height: "auto", opacity: 1, marginBottom: 24 }}
-              exit={{ height: 0, opacity: 0, marginBottom: 0 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="overflow-hidden"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {activeTab === "inbound" ? (
-                  // ✅ INBOUND - Mostra apenas 4 cards relacionados
-                  <>
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
-                        <Building className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Inbound Total</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{formatNumber(totalSummary.inbound)}</h3>
-                        <span className="text-[9px] text-slate-400">Metas diárias somadas</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-green-50 text-green-600 border border-green-100">
-                        <Calendar className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Período Ativo</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{filters.mes !== "all" ? filters.mes : "Todos"}</h3>
-                        <span className="text-[9px] text-slate-400">Mês selecionado</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100">
-                        <Layers className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Categorias</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{filterOptions.categorias.length}</h3>
-                        <span className="text-[9px] text-slate-400">Ativas no filtro</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100">
-                        <Sparkles className="w-5 h-5 animate-pulse" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Total Extra / Remun.</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{formatNumber(totalSummary.remunerada)}</h3>
-                        <span className="text-[9px] text-slate-400">Capacidade extra contratada</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  // ✅ OUTBOUND - Mostra Fracionado, Fechado e Total
-                  <>
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-                        <Package className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Capacidade Fracionada</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{formatNumber(totalSummary.outboundFracionado)}</h3>
-                        <span className="text-[9px] text-slate-400">Total de cargas fracionadas</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100">
-                        <Truck className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Capacidade Fechada</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{formatNumber(totalSummary.outboundFechado)}</h3>
-                        <span className="text-[9px] text-slate-400">Total de Cargas fechadas</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-violet-50 text-violet-600 border border-violet-100">
-                        <Activity className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Total Capacidade</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{formatNumber(totalSummary.outboundFracionado + totalSummary.outboundFechado)}</h3>
-                        <span className="text-[9px] text-slate-400">Fracionado + Fechado</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                      <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100">
-                        <Layers className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Registros</p>
-                        <h3 className="text-lg font-black font-mono text-slate-900 mt-1">{processedData.length}</h3>
-                        <span className="text-[9px] text-slate-400">Meses com dados</span>
-                      </div>
-                    </div>
-                  </>
-                )}
+          {/* GRID DE KPIs / MÉTRICAS LIMPAS SEM LINHAS DIVISÓRIAS */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {(isInbound ? [
+              { label: "Capacidade regular", value: summary.normal, icon: Package },
+              { label: "Capacidade remunerada", value: summary.extra, icon: Truck },
+              { label: "Capacidade total", value: summary.normal + summary.extra, icon: ArrowDownToLine },
+              { label: "Dias / registros", value: filtered.length, icon: CalendarDays },
+            ] : [
+              { label: "Fracionado", value: summary.fracionado, icon: Package },
+              { label: "Fechado", value: summary.fechado, icon: Truck },
+              { label: "Capacidade total", value: summary.fracionado + summary.fechado, icon: ArrowUpFromLine },
+              { label: "Dias / registros", value: filtered.length, icon: CalendarDays },
+            ]).map(metric => (
+              <div 
+                key={metric.label} 
+                className="p-4 rounded-xl bg-slate-500/[0.04] dark:bg-slate-500/[0.08] hover:bg-slate-500/[0.07] dark:hover:bg-slate-500/[0.12] transition-colors"
+              >
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  <metric.icon className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                  <span>{metric.label}</span>
+                </div>
+                <div className="mt-2 font-mono text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
+                  {number(metric.value)}
+                </div>
               </div>
-            </motion.div>
+            ))}
+          </div>
+
+          {/* BANNER DE ERRO / AVISO */}
+          {error && (
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+                {records.length > 0 ? " · Exibindo últimos dados carregados." : ""}
+              </span>
+              <button onClick={() => void fetchCapacidades()} className="font-semibold underline cursor-pointer hover:opacity-80">
+                Tentar novamente
+              </button>
+            </div>
           )}
-        </AnimatePresence>
 
-        {/* Table Container */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden transition-shadow hover:shadow-lg">
-          <div className="overflow-y-auto max-h-[600px]">
-            {isLoading && rawCapacidades.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-20 text-slate-400">
-                <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4" />
-                <p className="text-xs font-medium">Carregando dados de logística...</p>
+          {/* TABELA TOTALMENTE SEM BORDAS */}
+          <div className="max-h-[620px] overflow-auto">
+            {loading && records.length === 0 ? (
+              <div className="py-20 text-center text-sm text-slate-500 dark:text-slate-400">
+                Carregando capacidades...
               </div>
-            ) : errorMsg && rawCapacidades.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-20 text-center">
-                <div className="text-4xl mb-4">🔌</div>
-                <p className="text-sm font-bold text-red-600">Erro de conexão</p>
-                <p className="text-xs text-slate-500 mt-2">{errorMsg}</p>
-                <button
-                  onClick={() => fetchCapacidades()}
-                  className="mt-4 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg text-sm hover:bg-blue-700"
-                >
-                  Tentar novamente
-                </button>
-              </div>
-            ) : processedData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-20 text-slate-400 text-center">
-                <HelpCircle className="w-12 h-12 text-slate-300 mb-3" />
-                <p className="text-xs font-bold text-slate-700">Nenhum registro encontrado para os filtros selecionados.</p>
+            ) : months.length === 0 ? (
+              <div className="py-20 text-center text-sm text-slate-500 dark:text-slate-400">
+                Nenhum registro encontrado para os filtros selecionados.
               </div>
             ) : (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/90 backdrop-blur-md text-slate-500 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-20 border-b border-slate-200/60">
-                    <th className="py-4 px-6 font-bold">Período / Dia</th>
-                    <th className="py-4 px-4 text-center font-bold">CD</th>
-                    <th className="py-4 px-4 text-center font-bold">Categoria</th>
-                    {activeTab === "inbound" ? (
-                      <th className="py-4 px-4 text-right font-bold">Capacidade. Inbound</th>
+              <table className="w-full min-w-[820px] text-left border-separate border-spacing-y-1">
+                <thead className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md">
+                  <tr>
+                    <th className={`${th} text-left rounded-l-xl`}>Período / data</th>
+                    <th className={`${th} text-left`}>CD</th>
+                    <th className={`${th} text-left`}>Categoria</th>
+                    {isInbound ? (
+                      <th className={`${th} text-right`}>Capacidade inbound</th>
                     ) : (
                       <>
-                        <th className="py-4 px-4 text-right font-bold">Capacit. Fracionado</th>
-                        <th className="py-4 px-4 text-right font-bold">Capacit. Fechado</th>
+                        <th className={`${th} text-right`}>Fracionado</th>
+                        <th className={`${th} text-right`}>Fechado</th>
                       </>
                     )}
-                    <th className="py-4 px-4 text-center font-bold">Ações</th>
+                    <th className={`${th} w-20 text-center rounded-r-xl`}>Ações</th>
                   </tr>
                 </thead>
-                <tbody className="text-xs divide-y divide-slate-100">
-                  {processedData.map(month => {
-                    const mid = `month:${month.monthKey}`, isM = !!expandedMonths[mid];
-                    return (
-                      <React.Fragment key={month.monthKey}>
-                        <tr
-                          onClick={() => setExpandedMonths(p => ({ ...p, [mid]: !p[mid] }))}
-                          className={`group cursor-pointer border-b border-slate-150 transition-all duration-200 ${accentTheme.bgHover} ${isM ? 'bg-slate-50 font-bold text-slate-900' : 'bg-white'}`}
-                        >
-                          <td className="py-4.5 px-6 font-extrabold text-slate-800 flex items-center gap-3">
-                            <div className="p-1 rounded-lg bg-slate-100 group-hover:bg-blue-50 transition-colors">
-                              {isM ? <ChevronDown className="w-4 h-4 text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
-                            </div>
-                            <span className="tracking-tight text-sm font-bold">{month.monthName}</span>
-                          </td>
-                          <td className="py-4.5 px-4 text-center font-semibold text-slate-700">
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono border border-slate-200/50 dark:border-slate-600/50 text-slate-600 dark:text-slate-400">
-                              {month.uniqueCds && month.uniqueCds.length > 1 
-                                ? "CDs" 
-                                : month.uniqueCds && month.uniqueCds.length === 1 
-                                  ? `CD ${month.uniqueCds[0]}` 
-                                  : month.cd 
-                                    ? `CD ${month.cd}` 
-                                    : "CDs"}
+                <tbody>
+                  {months.map(month => (
+                    <React.Fragment key={month.key}>
+                      
+                      {/* LINHA CONSOLIDADA DO MÊS (SEM BORDA, COM FUNDO SUAVE) */}
+                      <tr 
+                        onClick={() => setExpanded(prev => ({ ...prev, [month.key]: !prev[month.key] }))} 
+                        aria-expanded={!!expanded[month.key]} 
+                        className="cursor-pointer bg-slate-500/[0.05] dark:bg-slate-500/[0.10] hover:bg-slate-500/[0.10] dark:hover:bg-slate-500/[0.16] transition-colors"
+                      >
+                        <td className={`${td} font-semibold text-slate-900 dark:text-slate-100 rounded-l-xl`}>
+                          <span className="flex items-center gap-2">
+                            {expanded[month.key] ? (
+                              <ChevronDown className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                            )}
+                            <span>{month.title}</span>
+                            <span className="ml-1 rounded-md bg-slate-500/10 dark:bg-slate-500/20 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                              {month.items.length}
                             </span>
+                          </span>
+                        </td>
+                        <td className={`${td} font-medium text-slate-600 dark:text-slate-300`}>{month.cd}</td>
+                        <td className={`${td} font-medium text-slate-600 dark:text-slate-300`}>{month.category}</td>
+                        {isInbound ? (
+                          <td className={`${td} text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100`}>
+                            {number(month.inbound)}
                           </td>
-                          <td className="py-4.5 px-4 text-center text-slate-600 font-semibold">
-                            {month.uniqueCats && month.uniqueCats.length > 1 ? "Múltiplas" : month.categoria}
-                          </td>
-                          {activeTab === "inbound" ? (
-                            <td className="py-4.5 px-4 text-right font-mono text-blue-600 font-extrabold text-sm">{formatNumber(month.capacidadeInbound)}</td>
-                          ) : (
-                            <>
-                              <td className="py-4.5 px-4 text-right font-mono text-indigo-600 font-extrabold text-sm">{formatNumber(month.capacidadeOutboundFracionado)}</td>
-                              <td className="py-4.5 px-4 text-right font-mono text-sky-600 font-extrabold text-sm">{formatNumber(month.capacidadeOutboundFechado)}</td>
-                            </>
-                          )}
-                          <td className="py-4.5 px-4 text-center">
-                            <span className="text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 italic font-semibold">Editar dias</span>
-                          </td>
-                        </tr>
-                         {isM && month.days.map(day => {
-                           const hasRem = activeTab === "inbound" && day.raw.recebimentoRemunerado && day.raw.recebimentoRemunerado > 0;
-                           return (
-                             <tr
-                               key={day.id}
-                               className={`border-b border-slate-100 transition-colors duration-150 ${
-                                 hasRem 
-                                   ? "bg-emerald-50/40 dark:bg-emerald-950/15 hover:bg-emerald-100/50 text-slate-700 border-l-4 border-emerald-500 font-medium" 
-                                   : `bg-white hover:bg-blue-50/20 ${accentTheme.rowHighlight}`
-                               }`}
-                             >
-                               <td className="py-3 pl-12 pr-4 text-slate-600 font-semibold font-mono text-[11px]">{day.dateStr}</td>
-                               <td className="py-3 px-4 text-center text-slate-400 font-mono text-[11px]">{day.raw.cd}</td>
-                               <td className="py-3 px-4 text-center text-slate-600 text-[11px] font-semibold">{day.raw.categoria}</td>
-                               {activeTab === "inbound" ? (
-                                 <td 
-                                   className={`py-3 px-4 text-right font-mono text-[11px] font-bold ${
-                                     hasRem 
-                                       ? "text-emerald-600 dark:text-emerald-400 cursor-help font-extrabold" 
-                                       : "text-blue-600"
-                                   }`}
-                                   onMouseMove={(e) => {
-                                     if (hasRem) {
-                                       setHoveredDay({
-                                         normal: day.capacidadeInbound || 0,
-                                         remunerada: day.raw.recebimentoRemunerado || 0,
-                                         total: (day.capacidadeInbound || 0) + (day.raw.recebimentoRemunerado || 0),
-                                         x: e.clientX,
-                                         y: e.clientY,
-                                         cd: day.raw.cd,
-                                         categoria: day.raw.categoria,
-                                         dateStr: day.dateStr
-                                       });
-                                     }
-                                   }}
-                                   onMouseLeave={() => setHoveredDay(null)}
-                                 >
-                                   {hasRem ? (
-                                     <span className="underline decoration-dotted decoration-emerald-400 select-none pb-0.5">
-                                       {formatNumber((day.capacidadeInbound || 0) + (day.raw.recebimentoRemunerado || 0))}
-                                     </span>
-                                   ) : (
-                                     formatNumber(day.capacidadeInbound)
-                                   )}
-                                 </td>
-                               ) : (
-                                 <>
-                                   <td className="py-3 px-4 text-right font-mono text-[11px] text-indigo-600 font-bold">{formatNumber(day.capacidadeOutboundFracionado)}</td>
-                                   <td className="py-3 px-4 text-right font-mono text-[11px] text-sky-600 font-bold">{formatNumber(day.capacidadeOutboundFechado)}</td>
-                                 </>
-                               )}
-                               <td className="py-3 px-4 text-center">
-                                 <button
-                                   disabled={user.role !== "admin"}
-                                   onClick={e => handleEditClick(e, day)}
-                                   className={`p-2 rounded-xl border transition-all duration-200 active:scale-90 ${
-                                     user.role === "admin"
-                                       ? hasRem
-                                         ? "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white cursor-pointer shadow-sm hover:shadow-md"
-                                         : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-600 hover:border-blue-600 hover:text-white cursor-pointer shadow-sm hover:shadow-md"
-                                       : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
-                                   }`}
-                                 >
-                                   <Edit2 className="w-3.5 h-3.5" />
-                                 </button>
-                               </td>
-                             </tr>
-                           );
-                         })}
-                      </React.Fragment>
-                    );
-                  })}
+                        ) : (
+                          <>
+                            <td className={`${td} text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100`}>
+                              {number(month.frac)}
+                            </td>
+                            <td className={`${td} text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100`}>
+                              {number(month.fech)}
+                            </td>
+                          </>
+                        )}
+                        <td className={`${td} text-center text-xs text-slate-400 dark:text-slate-500 rounded-r-xl`}>
+                          Detalhar
+                        </td>
+                      </tr>
+
+                      {/* DIAS EXPANDIDOS DO MÊS (SEM BORDAS, FLUTUAÇÃO LIMPA) */}
+                      {expanded[month.key] && month.items.map(item => {
+                        const extra = amount(item.recebimentoRemunerado);
+                        return (
+                          <tr 
+                            key={item.id} 
+                            className="hover:bg-slate-500/[0.04] dark:hover:bg-slate-500/[0.08] transition-colors"
+                          >
+                            <td className={`${td} pl-10 font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400 rounded-l-xl`}>
+                              {dateLabel(item.dataMovimentacao)}
+                            </td>
+                            <td className={td}>
+                              <span className="px-2 py-0.5 rounded-md font-mono text-xs bg-slate-500/10 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 font-medium">
+                                {item.cd}
+                              </span>
+                            </td>
+                            <td className={`${td} text-slate-600 dark:text-slate-300`}>
+                              {item.categoria}
+                            </td>
+                            {isInbound ? (
+                              <td className={`${td} text-right font-mono tabular-nums text-slate-900 dark:text-slate-100`}>
+                                <div className="font-medium">{number(amount(item.capacidadeInbound) + extra)}</div>
+                                {extra > 0 && (
+                                  <div 
+                                    className="mt-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400" 
+                                    title={`Regular: ${number(item.capacidadeInbound)} | Remunerada: ${number(extra)}`}
+                                  >
+                                    +{number(extra)} remunerada
+                                  </div>
+                                )}
+                              </td>
+                            ) : (
+                              <>
+                                <td className={`${td} text-right font-mono tabular-nums text-slate-900 dark:text-slate-100`}>
+                                  {number(item.capacidadeOutboundFracionado)}
+                                </td>
+                                <td className={`${td} text-right font-mono tabular-nums text-slate-900 dark:text-slate-100`}>
+                                  {number(item.capacidadeOutboundFechado)}
+                                </td>
+                              </>
+                            )}
+                            <td className={`${td} text-center rounded-r-xl`}>
+                              <button 
+                                type="button" 
+                                title={user?.role === "admin" ? "Editar capacidade" : "Somente administradores podem editar"} 
+                                aria-label={`Editar ${dateLabel(item.dataMovimentacao)} CD ${item.cd}`} 
+                                disabled={user?.role !== "admin" || saving} 
+                                onClick={() => openEdit(item)} 
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-500/10 dark:hover:bg-slate-500/20 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                 </tbody>
               </table>
             )}
           </div>
-          
-          <div className="mt-auto p-6 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="text-[11px] text-slate-500 text-center sm:text-left">
-              {/* <p className="font-bold text-emerald-600 flex items-center gap-1.5 justify-center sm:justify-start">
-                <Database className="w-3.5 h-3.5" /> API {activeTab}:
-              </p> */}
-              {/* <span>Endpoint: <span className="font-mono text-emerald-600">{API_BASE_URL}{CAPACIDADES_ENDPOINT}</span></span> */}
-            </div>
-            <div className="flex gap-6">
-              {activeTab === "inbound" ? (
-                <div className="text-right">
-                  <p className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Total Inbound</p>
-                  <p className="text-xl font-mono text-blue-600 font-black">{formatNumber(totalSummary.inbound)}</p>
-                </div>
-              ) : (
-                <>
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Fracionado</p>
-                    <p className="text-xl font-mono text-indigo-600 font-black">{formatNumber(totalSummary.outboundFracionado)}</p>
-                  </div>
-                  <div className="text-right border-l border-slate-250 pl-6">
-                    <p className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Fechado</p>
-                    <p className="text-xl font-mono text-sky-600 font-black">{formatNumber(totalSummary.outboundFechado)}</p>
-                  </div>
-                  <div className="text-right border-l border-slate-250 pl-6">
-                    <p className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">Consolidado</p>
-                    <p className="text-xl font-mono text-slate-800 font-black">{formatNumber(totalSummary.outboundFracionado + totalSummary.outboundFechado)}</p>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
 
+          {/* RODAPÉ LIMPO E CONSOLIDADO */}
+          <footer className="flex flex-wrap items-center justify-between gap-2 pt-3 text-xs text-slate-500 dark:text-slate-400">
+            <span>Valores consolidados conforme os filtros aplicados.</span>
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              Total {isInbound ? "inbound" : "outbound"}: 
+              <strong className="ml-1.5 font-mono text-sm text-slate-900 dark:text-slate-100 font-bold">
+                {number(isInbound ? summary.normal + summary.extra : summary.fracionado + summary.fechado)}
+              </strong>
+            </span>
+          </footer>
+        </section>
+      </div>
+
+      {/* MODAL DE EDIÇÃO */}
       <EditCapacityModal 
-        isOpen={isEditOpen} 
-        onClose={() => {
-          setIsEditOpen(false);
-          setEditTargetDay(undefined);
-        }} 
-        onSave={handleSaveCapacity} 
+        isOpen={editing} 
+        onClose={() => { if (!saving) { setEditing(false); setEditTarget(undefined); } }} 
+        onSave={save} 
         editMode={activeTab} 
-        targetDay={editTargetDay} 
+        targetDay={editTarget} 
       />
-
-      {/* ✅ Balão/Popup de Capacidade Remunerada estilizado */}
-      {/* ✅ Balão/Popup de Capacidade Remunerada estilizado - POSIÇÃO CORRIGIDA */}
-{hoveredDay && (
-  <div 
-    className="fixed bg-slate-950 text-white text-[11px] rounded-2xl p-4 shadow-2xl z-55 w-64 text-left pointer-events-none border border-slate-800 leading-relaxed font-sans transition-all duration-150 animate-in fade-in zoom-in-95"
-    style={{
-      left: `${hoveredDay.x}px`,
-      top: `${hoveredDay.y - 12}px`,
-      transform: "translate(-50%, -100%)",
-    }}
-  >
-    {/* Cabeçalho do Tooltip */}
-    <div className="font-bold text-emerald-400 border-b border-slate-800 pb-2.5 mb-2.5 flex items-center justify-between">
-      <span className="flex items-center gap-1.5 font-bold tracking-tight">
-        <Building className="w-3.5 h-3.5 text-emerald-400" />
-        CD {hoveredDay.cd}
-      </span>
-      <span className="px-2 py-0.5 rounded-lg text-[8px] uppercase tracking-wider font-extrabold bg-emerald-500/20 text-emerald-400 animate-pulse border border-emerald-500/10">
-        Extra Remun.
-      </span>
     </div>
-    
-    <div className="text-[10px] text-slate-400 mb-3 font-bold flex items-center gap-1.5">
-      <Calendar className="w-3.5 h-3.5 text-slate-500" />
-      <span>{hoveredDay.dateStr}</span>
-    </div>
-
-    <div className="space-y-2 pt-1">
-      <div className="flex justify-between items-center text-[10.5px]">
-        <span className="text-slate-400 font-semibold">Capacidade Normal:</span>
-        <span className="font-mono font-bold text-slate-200">{formatNumber(hoveredDay.normal)}</span>
-      </div>
-      <div className="flex justify-between items-center text-[10.5px]">
-        <span className="text-slate-400 font-semibold flex items-center gap-1">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-          Capacidade Extra:
-        </span>
-        <span className="font-mono text-emerald-400 font-black">+{formatNumber(hoveredDay.remunerada)}</span>
-      </div>
-      <div className="border-t border-slate-800 mt-3 pt-2.5 flex justify-between items-center font-bold text-[12px]">
-        <span className="text-slate-100 uppercase text-[8.5px] font-black tracking-wider">Capacidade Total:</span>
-        <span className="font-mono text-emerald-300 font-black bg-emerald-950/50 px-2 py-0.5 rounded-lg border border-emerald-900/30">
-          {formatNumber(hoveredDay.total)}
-        </span>
-      </div>
-    </div>
-    
-    {/* Seta do tooltip apontando para baixo */}
-    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-[6px] border-transparent border-t-slate-950" />
-  </div>
-)}
-    </>
   );
 }

@@ -12,6 +12,7 @@ import { User } from "../types";
 interface CapacidadeMesProps {
   currentUser: User;
   showNotification: (msg: string) => void;
+  theme?: "light" | "dark";
 }
 
 const CD_LIST = [
@@ -55,7 +56,8 @@ const getWeeksInMonth = (year: number, month: number) => {
   return Math.ceil(totalDays / 7);
 };
 
-export default function Capacidade_Mes({ currentUser, showNotification }: CapacidadeMesProps) {
+export default function Capacidade_Mes({ currentUser, showNotification, theme = "dark" }: CapacidadeMesProps) {
+  const isDark = theme === "dark";
   const [metas, setMetas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notif, setNotif] = useState<string | null>(null);
@@ -132,6 +134,16 @@ export default function Capacidade_Mes({ currentUser, showNotification }: Capaci
   const [excelCd, setExcelCd] = useState<string>("Todos");
   const [excelCat, setExcelCat] = useState<string>("Todas");
   const [excelDirection, setExcelDirection] = useState<"inbound" | "outbound" | "both">("both");
+
+  // States para Modal de Antecipação
+  const [showAntecipacaoModal, setShowAntecipacaoModal] = useState<boolean>(false);
+  const [antecipacaoCd, setAntecipacaoCd] = useState<number>(1965);
+  const [antecipacaoCategoria, setAntecipacaoCategoria] = useState<string>("Mercearia");
+  const [antecipacaoDataInicio, setAntecipacaoDataInicio] = useState<string>("");
+  const [antecipacaoDataFim, setAntecipacaoDataFim] = useState<string>("");
+  const [antecipacaoQtd, setAntecipacaoQtd] = useState<string>("");
+  const [antecipacaoSaving, setAntecipacaoSaving] = useState<boolean>(false);
+  const [antecipacaoError, setAntecipacaoError] = useState<string | null>(null);
 
   useEffect(() => {
     setBulkError(null);
@@ -1318,15 +1330,85 @@ const saveBulk = async () => {
     }
   };
 
+  // ✅ Salvar Antecipação (Inbound)
+  const saveAntecipacao = async () => {
+    setAntecipacaoError(null);
+    if (!antecipacaoDataInicio || !antecipacaoDataFim) {
+      setAntecipacaoError("Por favor, preencha a data inicial e a data final.");
+      return;
+    }
+    if (!antecipacaoQtd || isNaN(Number(antecipacaoQtd)) || Number(antecipacaoQtd) < 0) {
+      setAntecipacaoError("Por favor, informe uma quantidade válida.");
+      return;
+    }
+    if (new Date(antecipacaoDataInicio) > new Date(antecipacaoDataFim)) {
+      setAntecipacaoError("A data inicial não pode ser posterior à data final.");
+      return;
+    }
+
+    setAntecipacaoSaving(true);
+    try {
+      const payload = {
+        dataInicio: antecipacaoDataInicio,
+        dataFim: antecipacaoDataFim,
+        CD: Number(antecipacaoCd),
+        categoria: antecipacaoCategoria,
+        qtdAntecipacao: Number(antecipacaoQtd)
+      };
+
+      const token = localStorage.getItem("auth_token") || currentUser.token;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch("/api/metas/antecipacao", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Erro ao salvar antecipação.");
+      }
+
+      showNotification("Antecipação cadastrada e capacidade atualizada com sucesso!");
+      setShowAntecipacaoModal(false);
+      await load();
+    } catch (err: any) {
+      setAntecipacaoError(err.message || "Erro ao conectar com o servidor.");
+    } finally {
+      setAntecipacaoSaving(false);
+    }
+  };
+
   // ✅ Cel - Apenas admin pode clicar
   const Cel = ({ rid, tp, m, v, semana, cd, cat, id, disabled }: any) => {
     const isZero = v === 0;
     const isEditingEnabled = isAdmin && !disabled;
     const highlightClass = isEditingEnabled
       ? direction === "inbound"
-        ? "hover:bg-violet-50/50 hover:text-violet-700 cursor-pointer"
-        : "hover:bg-indigo-50/50 hover:text-indigo-700 cursor-pointer"
+        ? isDark ? "hover:bg-violet-950/40 hover:text-violet-300 cursor-pointer" : "hover:bg-violet-50/70 hover:text-violet-700 cursor-pointer"
+        : isDark ? "hover:bg-indigo-950/40 hover:text-indigo-300 cursor-pointer" : "hover:bg-indigo-50/70 hover:text-indigo-700 cursor-pointer"
       : "";
+
+    // Destaque de cor dependendo da métrica
+    let numColorClass = "";
+    if (isZero) {
+      numColorClass = isDark ? "text-slate-600 font-normal" : "text-slate-300 font-normal";
+    } else if (tp === "inbound") {
+      numColorClass = isDark ? "text-violet-300 font-bold" : "text-violet-900 font-semibold";
+    } else if (tp === "frac") {
+      numColorClass = isDark ? "text-indigo-300 font-bold" : "text-indigo-900 font-semibold";
+    } else if (tp === "fech") {
+      numColorClass = isDark ? "text-sky-300 font-bold" : "text-sky-900 font-semibold";
+    } else {
+      numColorClass = isDark ? "text-slate-200 font-bold" : "text-slate-800 font-semibold";
+    }
 
     return (
       <td 
@@ -1344,7 +1426,7 @@ const saveBulk = async () => {
         }} 
         className={`py-2 px-3.5 text-right font-mono text-[11px] tabular-nums transition-all duration-150 relative group ${highlightClass}`}
       >
-        <span className={isZero ? "text-slate-300 font-normal" : "text-slate-700 font-normal"}>
+        <span className={numColorClass}>
           {fmt(v)}
         </span>
         {isEditingEnabled && (
@@ -1427,13 +1509,19 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
     }, [spInboundCols, regInboundCols, tblCols]);
 
     return (
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full transition-all duration-300">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50/75 border-b border-slate-200">
+      <div className={`border rounded-xl overflow-hidden shadow-sm w-full transition-all duration-300 ${
+        isDark ? "bg-[#0f1422] border-[#1e2538]" : "bg-white border-slate-200"
+      }`}>
+        <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b ${
+          isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/75 border-slate-200"
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-violet-100 text-violet-600"><Building className="w-3.5 h-3.5" /></span>
+            <span className={`p-1.5 rounded-lg ${isDark ? "bg-violet-950/60 text-violet-300 ring-1 ring-violet-500/30" : "bg-violet-100 text-violet-600"}`}>
+              <Building className="w-3.5 h-3.5" />
+            </span>
             <div>
-              <span className="text-xs font-bold text-slate-800 tracking-tight">{titulo}</span>
-              <p className="text-[10px] text-slate-400 font-medium">
+              <span className={`text-xs font-bold tracking-tight ${isDark ? "text-slate-100" : "text-slate-800"}`}>{titulo}</span>
+              <p className={`text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>
                 {inboundView === "mes" 
                   ? "Visualização de recebimento com expansão semanal direta" 
                   : `Semanal de ${getMonthLabel(selectedMonthInbound)} (${getWeeksInMonth(2026, selectedMonthInbound)} semanas)`}
@@ -1446,20 +1534,26 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               <button
                 type="button"
                 onClick={toggleAllMonths}
-                className="px-2.5 py-1 text-[10px] font-bold border border-violet-100 text-violet-700 bg-violet-50/50 hover:bg-violet-100/50 rounded-lg transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                className={`px-2.5 py-1 text-[10px] font-bold border rounded-lg transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer ${
+                  isDark 
+                    ? "border-violet-700/60 text-violet-300 bg-violet-950/40 hover:bg-violet-900/50" 
+                    : "border-violet-100 text-violet-700 bg-violet-50/50 hover:bg-violet-100/50"
+                }`}
               >
                 <SlidersHorizontal className="w-3 h-3" />
                 {expandedMonths.length === dynMonths.length ? "Recolher Todos" : "Expandir Semanas"}
               </button>
             )}
 
-            <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-lg p-0.5 shadow-inner">
+            <div className={`flex items-center gap-0.5 border rounded-lg p-0.5 shadow-inner ${
+              isDark ? "bg-[#080c14] border-[#1e2538]" : "bg-slate-100 border-slate-200"
+            }`}>
               <button
                 onClick={() => setInboundView("mes")}
                 className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${
                   inboundView === "mes"
-                    ? "bg-white text-violet-700 shadow-sm font-black"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? isDark ? "bg-[#182035] text-violet-300 shadow-sm font-black border border-violet-500/30" : "bg-white text-violet-700 shadow-sm font-black"
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
                 }`}
               >
                 Geral (Mensal)
@@ -1468,8 +1562,8 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 onClick={() => setInboundView("semana")}
                 className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${
                   inboundView === "semana"
-                    ? "bg-white text-violet-700 shadow-sm font-black"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? isDark ? "bg-[#182035] text-violet-300 shadow-sm font-black border border-violet-500/30" : "bg-white text-violet-700 shadow-sm font-black"
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
                 }`}
               >
                 Focar em 1 Mês
@@ -1479,16 +1573,22 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
         </div>
 
         {anyMonthExpanded && inboundView === "mes" && (
-          <div className="flex items-center justify-between bg-violet-50/30 border-b border-violet-100 px-4 py-2 text-xs text-violet-950 animate-in fade-in duration-300">
+          <div className={`flex items-center justify-between border-b px-4 py-2 text-xs animate-in fade-in duration-300 ${
+            isDark ? "bg-violet-950/20 border-violet-800/40 text-violet-200" : "bg-violet-50/30 border-violet-100 text-violet-950"
+          }`}>
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-violet-500 animate-pulse" />
+              <Sparkles className="w-4 h-4 text-violet-400 animate-pulse" />
               <span>
                 Focado no mês de <strong>{expandedMonths.map(m => getMonthLabel(m)).join(", ")}</strong> e suas semanas.
               </span>
             </div>
             <button
               onClick={() => setExpandedMonths([])}
-              className="text-[9px] uppercase font-bold tracking-wider bg-white hover:bg-violet-50 text-violet-700 border border-violet-200 px-2.5 py-1 rounded-md shadow-sm transition-all active:scale-95 cursor-pointer"
+              className={`text-[9px] uppercase font-bold tracking-wider border px-2.5 py-1 rounded-md shadow-sm transition-all active:scale-95 cursor-pointer ${
+                isDark 
+                  ? "bg-[#0b0f19] hover:bg-violet-950/40 text-violet-300 border-violet-700/60" 
+                  : "bg-white hover:bg-violet-50 text-violet-700 border-violet-200"
+              }`}
             >
               Exibir Todos os Meses
             </button>
@@ -1496,7 +1596,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
         )}
 
         {inboundView === "semana" && (
-          <div className="flex items-center gap-1 px-3.5 py-2 bg-slate-50/50 border-b overflow-x-auto scrollbar-none">
+          <div className={`flex items-center gap-1 px-3.5 py-2 border-b overflow-x-auto scrollbar-none ${
+            isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/50 border-b"
+          }`}>
             <span className="text-[9px] font-bold text-slate-400 uppercase shrink-0 mr-2 tracking-wide">Focar no Mês:</span>
             {Array.from(new Set(metas.map(m => Number(m.mes)))).filter(Boolean).sort((a: number, b: number) => a - b).map((m: number) => {
               const isSelected = selectedMonthInbound === m;
@@ -1508,7 +1610,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap border flex items-center gap-1 ${
                     isSelected
                       ? "bg-violet-600 text-white border-violet-600 shadow-sm font-extrabold"
-                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      : isDark 
+                        ? "bg-[#0f1422] text-slate-300 border-[#1e2538] hover:bg-[#141b2d]" 
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                   }`}
                 >
                   <Calendar className="w-2.5 h-2.5" />
@@ -1523,9 +1627,11 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
           {inboundView === "mes" ? (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50/70 text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200/80">
-                  <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 font-semibold text-slate-500 text-left">CD</th>
-                  <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 text-center font-semibold text-slate-500">Categoria</th>
+                <tr className={`text-[10px] font-bold uppercase border-b ${
+                  isDark ? "bg-[#0b0f19] text-slate-400 border-[#1e2538]" : "bg-slate-50/70 text-slate-500 border-slate-200/80"
+                }`}>
+                  <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 font-semibold text-left">CD</th>
+                  <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 text-center font-semibold">Categoria</th>
                   {visibleMonths.map(m => {
                     const isExpanded = expandedMonths.includes(m);
                     const numWeeks = getWeeksInMonth(2026, m);
@@ -1535,7 +1641,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         colSpan={isExpanded ? 1 + numWeeks : 1}
                         rowSpan={isExpanded ? 1 : (anyMonthExpanded ? 2 : 1)}
                         className={`py-1.5 px-3 text-center font-semibold transition-all duration-205 ${
-                          isExpanded ? "bg-violet-50/40 text-violet-700 font-bold" : "text-slate-500"
+                          isExpanded 
+                            ? isDark ? "bg-violet-950/40 text-violet-300 font-bold border-b border-violet-800/40" : "bg-violet-50/40 text-violet-700 font-bold" 
+                            : isDark ? "text-slate-300" : "text-slate-500"
                         }`}
                       >
                         <div className="flex items-center justify-center gap-1">
@@ -1545,8 +1653,8 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                             onClick={() => toggleMonth(m)}
                             className={`p-0.5 rounded transition-all flex items-center justify-center ${
                               isExpanded
-                                ? "bg-violet-100 text-violet-700 hover:bg-violet-200"
-                                : "bg-slate-200/60 text-slate-500 hover:bg-slate-300"
+                                ? isDark ? "bg-violet-900/60 text-violet-200 hover:bg-violet-800/80" : "bg-violet-100 text-violet-700 hover:bg-violet-200"
+                                : isDark ? "bg-[#182035] text-slate-400 hover:bg-[#202b48]" : "bg-slate-200/60 text-slate-500 hover:bg-slate-300"
                             }`}
                             title={isExpanded ? "Recolher semanas" : "Expandir semanas"}
                           >
@@ -1560,14 +1668,16 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       </th>
                     );
                   })}
-                  {!anyMonthExpanded && <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 text-right font-semibold text-slate-500">Total</th>}
+                  {!anyMonthExpanded && <th rowSpan={anyMonthExpanded ? 2 : 1} className="py-3 px-4 text-right font-semibold">Total</th>}
                 </tr>
                 {anyMonthExpanded && (
-                  <tr className="bg-slate-50/40 text-[9px] font-bold uppercase text-slate-400 border-b border-slate-150">
+                  <tr className={`text-[9px] font-bold uppercase border-b ${
+                    isDark ? "bg-[#0b0f19]/90 text-slate-400 border-[#1e2538]" : "bg-slate-50/40 text-slate-400 border-slate-150"
+                  }`}>
                     {tblCols.map(col => {
                       if (!expandedMonths.includes(col.month)) return null;
                       return (
-                        <th key={col.key} className="py-1 px-2.5 text-right font-semibold text-slate-400 animate-in fade-in duration-200">
+                        <th key={col.key} className="py-1 px-2.5 text-right font-semibold animate-in fade-in duration-200">
                           {col.type === "total" ? "Total" : `Sem ${col.week}`}
                         </th>
                       );
@@ -1575,28 +1685,32 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   </tr>
                 )}
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className={`divide-y ${isDark ? "divide-[#1e2538]" : "divide-slate-100"}`}>
                 {/* SÃO PAULO */}
-                <tr className="bg-slate-50/40">
-                  <td colSpan={anyMonthExpanded ? 2 + tblCols.length : 3 + tblCols.length} className="py-1.5 px-4 border-b border-slate-100/60">
+                <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                  <td colSpan={anyMonthExpanded ? 2 + tblCols.length : 3 + tblCols.length} className={`py-1.5 px-4 border-b ${
+                    isDark ? "border-[#1e2538]" : "border-slate-100/60"
+                  }`}>
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-3.5 bg-violet-500 rounded-sm" />
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">São Paulo (SP)</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-violet-300" : "text-slate-600"}`}>São Paulo (SP)</span>
                     </div>
                   </td>
                 </tr>
                 {sp.map(r => (
                   <React.Fragment key={r.id}>
-                    <tr className="hover:bg-slate-50/30 transition-colors">
-                      <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                    <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                      <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                         <div className="flex items-center gap-1.5">
                           {r.hasMultipleCategories ? (
                             <button 
                               type="button"
                               onClick={() => setExpandedInboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                              className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                              className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                                isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                              }`}
                             >
-                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? 'rotate-90 text-slate-800' : 'text-slate-400'}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-800"}` : 'text-slate-400'}`} />
                             </button>
                           ) : (
                             <div className="w-5" />
@@ -1604,7 +1718,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           CD {r.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                       {tblCols.map(col => {
                         if (col.type === "total") {
                           return <Cel key={col.key} rid={r.id} tp="inbound" m={col.month} v={r.md[col.month]?.inbound || 0} disabled={true} />;
@@ -1626,16 +1740,22 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           );
                         }
                       })}
-                      {!anyMonthExpanded && <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 tabular-nums">{fmt(dynMonths.reduce((s, m) => s + (r.md[m]?.inbound || 0), 0))}</td>}
+                      {!anyMonthExpanded && (
+                        <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                          isDark ? "text-slate-200" : "text-slate-700"
+                        }`}>
+                          {fmt(dynMonths.reduce((s, m) => s + (r.md[m]?.inbound || 0), 0))}
+                        </td>
+                      )}
                     </tr>
                     {r.hasMultipleCategories && expandedInboundCds[r.cd] && r.children?.map((child: any) => (
-                      <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                        <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                      <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                        <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                           <div className="flex items-center gap-1">
                             <span className="text-violet-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                        <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                         {tblCols.map(col => {
                           if (col.type === "total") {
                             return <Cel key={col.key} rid={child.id} tp="inbound" m={col.month} v={child.md[col.month]?.inbound || 0} disabled={true} />;
@@ -1657,33 +1777,43 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                             );
                           }
                         })}
-                        {!anyMonthExpanded && <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-600 bg-slate-50/30 tabular-nums">{fmt(dynMonths.reduce((s, m) => s + (child.md[m]?.inbound || 0), 0))}</td>}
+                        {!anyMonthExpanded && (
+                          <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                            isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-600 bg-slate-50/30"
+                          }`}>
+                            {fmt(dynMonths.reduce((s, m) => s + (child.md[m]?.inbound || 0), 0))}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </React.Fragment>
                 ))}
 
                 {/* REGIONAL */}
-                <tr className="bg-slate-50/40">
-                  <td colSpan={anyMonthExpanded ? 2 + tblCols.length : 3 + tblCols.length} className="py-1.5 px-4 border-b border-slate-100/60">
+                <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                  <td colSpan={anyMonthExpanded ? 2 + tblCols.length : 3 + tblCols.length} className={`py-1.5 px-4 border-b ${
+                    isDark ? "border-[#1e2538]" : "border-slate-100/60"
+                  }`}>
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-3.5 bg-violet-400 rounded-sm" />
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Regional (REG)</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-violet-300" : "text-slate-600"}`}>Regional (REG)</span>
                     </div>
                   </td>
                 </tr>
                 {reg.map(r => (
                   <React.Fragment key={r.id}>
-                    <tr className="hover:bg-slate-50/30 transition-colors">
-                      <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                    <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                      <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                         <div className="flex items-center gap-1.5">
                           {r.hasMultipleCategories ? (
                             <button 
                               type="button"
                               onClick={() => setExpandedInboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                              className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                              className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                                isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                              }`}
                             >
-                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? 'rotate-90 text-slate-800' : 'text-slate-400'}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-800"}` : 'text-slate-400'}`} />
                             </button>
                           ) : (
                             <div className="w-5" />
@@ -1691,7 +1821,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           CD {r.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                       {tblCols.map(col => {
                         if (col.type === "total") {
                           return <Cel key={col.key} rid={r.id} tp="inbound" m={col.month} v={r.md[col.month]?.inbound || 0} disabled={true} />;
@@ -1713,16 +1843,22 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           );
                         }
                       })}
-                      {!anyMonthExpanded && <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 tabular-nums">{fmt(dynMonths.reduce((s, m) => s + (r.md[m]?.inbound || 0), 0))}</td>}
+                      {!anyMonthExpanded && (
+                        <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                          isDark ? "text-slate-200" : "text-slate-700"
+                        }`}>
+                          {fmt(dynMonths.reduce((s, m) => s + (r.md[m]?.inbound || 0), 0))}
+                        </td>
+                      )}
                     </tr>
                     {r.hasMultipleCategories && expandedInboundCds[r.cd] && r.children?.map((child: any) => (
-                      <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                        <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                      <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                        <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                           <div className="flex items-center gap-1">
                             <span className="text-violet-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                        <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                         {tblCols.map(col => {
                           if (col.type === "total") {
                             return <Cel key={col.key} rid={child.id} tp="inbound" m={col.month} v={child.md[col.month]?.inbound || 0} disabled={true} />;
@@ -1744,58 +1880,82 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                             );
                           }
                         })}
-                        {!anyMonthExpanded && <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-600 bg-slate-50/30 tabular-nums">{fmt(dynMonths.reduce((s, m) => s + (child.md[m]?.inbound || 0), 0))}</td>}
+                        {!anyMonthExpanded && (
+                          <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                            isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-600 bg-slate-50/30"
+                          }`}>
+                            {fmt(dynMonths.reduce((s, m) => s + (child.md[m]?.inbound || 0), 0))}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </React.Fragment>
                 ))}
 
                 {/* TOTAL GERAL */}
-                <tr className="bg-slate-50 text-slate-800 text-[11px] border-t border-slate-200">
-                  <td className="py-3 px-4 uppercase font-semibold tracking-wider text-slate-600">Total geral</td>
+                <tr className={`text-[11px] border-t font-semibold ${
+                  isDark ? "bg-[#0b0f19] text-white border-[#1e2538]" : "bg-slate-50 text-slate-800 border-slate-200"
+                }`}>
+                  <td className={`py-3 px-4 uppercase tracking-wider ${isDark ? "text-slate-300 font-bold" : "text-slate-600 font-semibold"}`}>Total geral</td>
                   <td className="py-3 text-center text-slate-400 font-normal">—</td>
                   {tblCols.map(col => {
                     const val = col.type === "total" ? (gtI[col.month] || 0) : (gtInboundCols[col.key] || 0);
-                    return <td key={col.key} className="py-3 px-3.5 text-right font-mono text-slate-700 tabular-nums font-normal">{fmt(val)}</td>;
+                    return (
+                      <td key={col.key} className={`py-3 px-3.5 text-right font-mono font-bold tabular-nums ${
+                        isDark ? "text-emerald-400" : "text-slate-700 font-normal"
+                      }`}>
+                        {fmt(val)}
+                      </td>
+                    );
                   })}
-                  {!anyMonthExpanded && <td className="py-3 px-4 text-right font-mono text-slate-700 font-normal tabular-nums">{fmt(tI)}</td>}
+                  {!anyMonthExpanded && (
+                    <td className={`py-3 px-4 text-right font-mono font-black tabular-nums ${
+                      isDark ? "text-emerald-400 bg-emerald-950/20" : "text-slate-700 font-normal"
+                    }`}>
+                      {fmt(tI)}
+                    </td>
+                  )}
                 </tr>
               </tbody>
             </table>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50/70 text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200/80">
-                  <th className="py-3 px-4 font-semibold text-slate-500 text-left">CD</th>
-                  <th className="py-3 px-4 text-center font-semibold text-slate-500">Categoria</th>
+                <tr className={`text-[10px] font-bold uppercase border-b ${
+                  isDark ? "bg-[#0b0f19] text-slate-400 border-[#1e2538]" : "bg-slate-50/70 text-slate-500 border-slate-200/80"
+                }`}>
+                  <th className="py-3 px-4 font-semibold text-left">CD</th>
+                  <th className="py-3 px-4 text-center font-semibold">Categoria</th>
                   {activeWeeks.map(w => (
-                    <th key={w} className="py-3 px-3.5 text-right font-semibold text-slate-500">Semana {w}</th>
+                    <th key={w} className="py-3 px-3.5 text-right font-semibold">Semana {w}</th>
                   ))}
-                  <th className="py-3 px-4 text-right font-semibold text-slate-500">Total</th>
+                  <th className="py-3 px-4 text-right font-semibold">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className={`divide-y ${isDark ? "divide-[#1e2538]" : "divide-slate-100"}`}>
                 {/* SÃO PAULO */}
-                <tr className="bg-slate-50/40">
-                  <td colSpan={3 + activeWeeks.length} className="py-1.5 px-4 border-b border-slate-100/60">
+                <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                  <td colSpan={3 + activeWeeks.length} className={`py-1.5 px-4 border-b ${isDark ? "border-[#1e2538]" : "border-slate-100/60"}`}>
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-3.5 bg-violet-500 rounded-sm" />
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">São Paulo (SP)</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-violet-300" : "text-slate-600"}`}>São Paulo (SP)</span>
                     </div>
                   </td>
                 </tr>
                 {weeklyInboundRows.filter(r => r.group === "SP" && !r.isChild).map(r => (
                   <React.Fragment key={r.id}>
-                    <tr className="hover:bg-slate-50/30 transition-colors">
-                      <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                    <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                      <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                         <div className="flex items-center gap-1.5">
                           {r.hasMultipleCategories ? (
                             <button 
                               type="button"
                               onClick={() => setExpandedInboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                              className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                              className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                                isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                              }`}
                             >
-                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? 'rotate-90 text-slate-800' : 'text-slate-400'}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-800"}` : 'text-slate-400'}`} />
                             </button>
                           ) : (
                             <div className="w-5" />
@@ -1803,7 +1963,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           CD {r.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                       {activeWeeks.map(w => {
                         const weekData = r.wd[w];
                         return (
@@ -1821,18 +1981,20 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           />
                         );
                       })}
-                      <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 tabular-nums">
+                      <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                        isDark ? "text-slate-200" : "text-slate-700"
+                      }`}>
                         {fmt(activeWeeks.reduce((s, w) => s + (r.wd[w]?.inbound || 0), 0))}
                       </td>
                     </tr>
                     {r.hasMultipleCategories && expandedInboundCds[r.cd] && r.children?.map((child: any) => (
-                      <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                        <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                      <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                        <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                           <div className="flex items-center gap-1">
                             <span className="text-violet-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                        <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                         {activeWeeks.map(w => {
                           const weekData = child.wd[w];
                           return (
@@ -1850,7 +2012,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                             />
                           );
                         })}
-                        <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-600 bg-slate-50/30 tabular-nums">
+                        <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                          isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-600 bg-slate-50/30"
+                        }`}>
                           {fmt(activeWeeks.reduce((s, w) => s + (child.wd[w]?.inbound || 0), 0))}
                         </td>
                       </tr>
@@ -1859,26 +2023,28 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 ))}
 
                 {/* REGIONAL */}
-                <tr className="bg-slate-50/40">
-                  <td colSpan={3 + activeWeeks.length} className="py-1.5 px-4 border-b border-slate-100/60">
+                <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                  <td colSpan={3 + activeWeeks.length} className={`py-1.5 px-4 border-b ${isDark ? "border-[#1e2538]" : "border-slate-100/60"}`}>
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-3.5 bg-violet-400 rounded-sm" />
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Regional (REG)</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-violet-300" : "text-slate-600"}`}>Regional (REG)</span>
                     </div>
                   </td>
                 </tr>
                 {weeklyInboundRows.filter(r => r.group === "REG" && !r.isChild).map(r => (
                   <React.Fragment key={r.id}>
-                    <tr className="hover:bg-slate-50/30 transition-colors">
-                      <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                    <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                      <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                         <div className="flex items-center gap-1.5">
                           {r.hasMultipleCategories ? (
                             <button 
                               type="button"
                               onClick={() => setExpandedInboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                              className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                              className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                                isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                              }`}
                             >
-                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? 'rotate-90 text-slate-800' : 'text-slate-400'}`} />
+                              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedInboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-800"}` : 'text-slate-400'}`} />
                             </button>
                           ) : (
                             <div className="w-5" />
@@ -1886,7 +2052,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           CD {r.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                       {activeWeeks.map(w => {
                         const weekData = r.wd[w];
                         return (
@@ -1904,18 +2070,20 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           />
                         );
                       })}
-                      <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 tabular-nums">
+                      <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                        isDark ? "text-slate-200" : "text-slate-700"
+                      }`}>
                         {fmt(activeWeeks.reduce((s, w) => s + (r.wd[w]?.inbound || 0), 0))}
                       </td>
                     </tr>
                     {r.hasMultipleCategories && expandedInboundCds[r.cd] && r.children?.map((child: any) => (
-                      <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                        <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                      <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                        <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                           <div className="flex items-center gap-1">
                             <span className="text-violet-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                        <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                         {activeWeeks.map(w => {
                           const weekData = child.wd[w];
                           return (
@@ -1933,7 +2101,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                             />
                           );
                         })}
-                        <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-600 bg-slate-50/30 tabular-nums">
+                        <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                          isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-600 bg-slate-50/30"
+                        }`}>
                           {fmt(activeWeeks.reduce((s, w) => s + (child.wd[w]?.inbound || 0), 0))}
                         </td>
                       </tr>
@@ -1942,13 +2112,23 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 ))}
 
                 {/* TOTAL GERAL */}
-                <tr className="bg-slate-50 text-slate-800 text-[11px] border-t border-slate-200">
-                  <td className="py-3 px-4 uppercase font-semibold tracking-wider text-slate-600">Total geral</td>
+                <tr className={`text-[11px] border-t font-semibold ${
+                  isDark ? "bg-[#0b0f19] text-white border-[#1e2538]" : "bg-slate-50 text-slate-800 border-slate-200"
+                }`}>
+                  <td className={`py-3 px-4 uppercase tracking-wider ${isDark ? "text-slate-300 font-bold" : "text-slate-600 font-semibold"}`}>Total geral</td>
                   <td className="py-3 text-center text-slate-400 font-normal">—</td>
                   {activeWeeks.map(w => (
-                    <td key={w} className="py-3 px-3.5 text-right font-mono text-slate-700 tabular-nums font-normal">{fmt(gtWeeklySum[w] || 0)}</td>
+                    <td key={w} className={`py-3 px-3.5 text-right font-mono font-bold tabular-nums ${
+                      isDark ? "text-emerald-400" : "text-slate-700 font-normal"
+                    }`}>
+                      {fmt(gtWeeklySum[w] || 0)}
+                    </td>
                   ))}
-                  <td className="py-3 px-4 text-right font-mono text-slate-700 font-normal tabular-nums">{fmt(tWeeklyI)}</td>
+                  <td className={`py-3 px-4 text-right font-mono font-black tabular-nums ${
+                    isDark ? "text-emerald-400 bg-emerald-950/20" : "text-slate-700 font-normal"
+                  }`}>
+                    {fmt(tWeeklyI)}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1968,42 +2148,64 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
     const totalColumns = 2 + dynMonths.length * subColsCount + totalColsCount;
 
     return (
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full transition-all duration-300">
-        <div className="flex items-center justify-between gap-2 px-4 py-3.5 bg-slate-50/75 border-b border-slate-200">
+      <div className={`border rounded-xl overflow-hidden shadow-sm w-full transition-all duration-300 ${
+        isDark ? "bg-[#0f1422] border-[#1e2538]" : "bg-white border-slate-200"
+      }`}>
+        <div className={`flex items-center justify-between gap-2 px-4 py-3.5 border-b ${
+          isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/75 border-slate-200"
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-blue-100 text-blue-600"><Truck className="w-3.5 h-3.5" /></span>
+            <span className={`p-1.5 rounded-lg ${isDark ? "bg-blue-950/60 text-blue-300 ring-1 ring-blue-500/30" : "bg-blue-100 text-blue-600"}`}>
+              <Truck className="w-3.5 h-3.5" />
+            </span>
             <div>
-              <span className="text-xs font-bold text-slate-800 tracking-tight">{titulo}</span>
-              <p className="text-[10px] text-slate-450 font-medium">Canais Fracionado e Fechado</p>
+              <span className={`text-xs font-bold tracking-tight ${isDark ? "text-slate-100" : "text-slate-800"}`}>{titulo}</span>
+              <p className={`text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-450"}`}>Canais Fracionado e Fechado</p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60 tabular-nums">{fmt(tFOutbound + tEOutbound)} total outbound</span>
+          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border tabular-nums ${
+            isDark ? "bg-[#080c14] text-slate-300 border-[#1e2538]" : "bg-slate-100 text-slate-500 border-slate-200/60"
+          }`}>
+            {fmt(tFOutbound + tEOutbound)} total outbound
+          </span>
         </div>
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/70 text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200/80">
-                <th rowSpan={2} className="py-3 px-4 font-semibold text-slate-500 text-left">CD</th>
-                <th rowSpan={2} className="py-3 px-4 text-center font-semibold text-slate-500">Categoria</th>
+              <tr className={`text-[10px] font-bold uppercase border-b ${
+                isDark ? "bg-[#0b0f19] text-slate-400 border-[#1e2538]" : "bg-slate-50/70 text-slate-500 border-slate-200/80"
+              }`}>
+                <th rowSpan={2} className="py-3 px-4 font-semibold text-left">CD</th>
+                <th rowSpan={2} className="py-3 px-4 text-center font-semibold">Categoria</th>
                 {dynMonths.map(m => (
                   <th
                     key={m}
                     colSpan={subColsCount}
-                    className="py-1.5 px-3 text-center font-semibold text-slate-600 bg-slate-50/40 uppercase tracking-wider text-[10px]"
+                    className={`py-1.5 px-3 text-center font-semibold uppercase tracking-wider text-[10px] ${
+                      isDark ? "text-slate-200 bg-[#0b0f19]" : "text-slate-600 bg-slate-50/40"
+                    }`}
                   >
                     {getMonthLabel(m)}
                   </th>
                 ))}
-                <th className="py-1.5 px-3 text-center font-semibold text-slate-500 uppercase tracking-wider text-[10px] bg-slate-50/10">Total Geral</th>
+                <th className={`py-1.5 px-3 text-center font-semibold uppercase tracking-wider text-[10px] ${
+                  isDark ? "text-slate-300 bg-[#0b0f19]" : "text-slate-500 bg-slate-50/10"
+                }`}>
+                  Total Geral
+                </th>
               </tr>
-              <tr className="bg-slate-50/20 text-[9px] font-bold uppercase text-slate-400 border-b border-slate-150">
+              <tr className={`text-[9px] font-bold uppercase border-b ${
+                isDark ? "bg-[#0b0f19]/80 text-slate-400 border-[#1e2538]" : "bg-slate-50/20 text-slate-400 border-slate-150"
+              }`}>
                 {dynMonths.map(m => {
                   const pendingFrac = getPendingFracionadoForMonth(m, ano !== "Todos" ? Number(ano) : 2026);
                   const hasPending = pendingFrac.length > 0;
                   return (
                     <React.Fragment key={m}>
                       {showFrac && (
-                        <th className="py-1.5 px-2.5 text-right font-semibold text-indigo-600/70 bg-slate-50/5">
+                        <th className={`py-1.5 px-2.5 text-right font-semibold ${
+                          isDark ? "text-indigo-300 bg-black/10" : "text-indigo-600/70 bg-slate-50/5"
+                        }`}>
                           <div className="flex items-center justify-end gap-1">
                             <span>Frac.</span>
                             {hasPending && (
@@ -2024,34 +2226,48 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           </div>
                         </th>
                       )}
-                      {showFech && <th className="py-1.5 px-2.5 text-right font-semibold text-sky-600/70 bg-slate-50/5">Fech.</th>}
+                      {showFech && (
+                        <th className={`py-1.5 px-2.5 text-right font-semibold ${
+                          isDark ? "text-sky-300 bg-black/10" : "text-sky-600/70 bg-slate-50/5"
+                        }`}>
+                          Fech.
+                        </th>
+                      )}
                     </React.Fragment>
                   );
                 })}
-                <th className="py-1.5 px-4 text-right font-semibold text-slate-500 bg-slate-50/10">Total Outbound</th>
+                <th className={`py-1.5 px-4 text-right font-semibold ${
+                  isDark ? "text-slate-300 bg-black/15" : "text-slate-500 bg-slate-50/10"
+                }`}>
+                  Total Outbound
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className={`divide-y ${isDark ? "divide-[#1e2538]" : "divide-slate-100"}`}>
               {/* SÃO PAULO */}
-              <tr className="bg-slate-50/40">
-                <td colSpan={2 + dynMonths.length * subColsCount + totalColsCount} className="py-1.5 px-4 border-b border-slate-100/60">
+              <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                <td colSpan={2 + dynMonths.length * subColsCount + totalColsCount} className={`py-1.5 px-4 border-b ${
+                  isDark ? "border-[#1e2538]" : "border-slate-100/60"
+                }`}>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-3.5 bg-blue-500 rounded-sm" />
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">São Paulo (SP)</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-blue-300" : "text-slate-600"}`}>São Paulo (SP)</span>
                   </div>
                 </td>
               </tr>
               {spOutbound.map(r => (
                 <React.Fragment key={r.id}>
-                  <tr className="hover:bg-slate-50/30 transition-colors">
-                    <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                  <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                    <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                       <div className="flex items-center gap-1.5">
                         {r.hasMultipleCategories ? (
                           <button 
                             onClick={() => setExpandedOutboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                            className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                            className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                              isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                            }`}
                           >
-                            <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedOutboundCds[r.cd] ? 'rotate-90 text-slate-805' : 'text-slate-400'}`} />
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedOutboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-805"}` : 'text-slate-400'}`} />
                           </button>
                         ) : (
                           <div className="w-5" />
@@ -2059,7 +2275,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         CD {r.cd}
                       </div>
                     </td>
-                    <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                    <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                     {dynMonths.map(m => (
                       <React.Fragment key={m}>
                         {showFrac && (
@@ -2088,18 +2304,20 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         )}
                       </React.Fragment>
                     ))}
-                    <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 bg-slate-50/40 tabular-nums">
+                    <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                      isDark ? "text-slate-200 bg-[#0b0f19]/30" : "text-slate-700 bg-slate-50/40"
+                    }`}>
                       {fmt(dynMonths.reduce((s, m) => s + (showFrac ? (r.md[m]?.frac || 0) : 0) + (showFech ? (r.md[m]?.fech || 0) : 0), 0))}
                     </td>
                   </tr>
                   {r.hasMultipleCategories && expandedOutboundCds[r.cd] && r.children?.map((child: any) => (
-                    <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                      <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                    <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                      <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                         <div className="flex items-center gap-1">
                           <span className="text-indigo-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                       {dynMonths.map(m => (
                         <React.Fragment key={m}>
                           {showFrac && (
@@ -2128,7 +2346,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           )}
                         </React.Fragment>
                       ))}
-                      <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-605 bg-slate-50/30 tabular-nums">
+                      <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                        isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-605 bg-slate-50/30"
+                      }`}>
                         {fmt(dynMonths.reduce((s, m) => s + (showFrac ? (child.md[m]?.frac || 0) : 0) + (showFech ? (child.md[m]?.fech || 0) : 0), 0))}
                       </td>
                     </tr>
@@ -2137,25 +2357,29 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               ))}
 
               {/* REGIONAL */}
-              <tr className="bg-slate-50/40">
-                <td colSpan={2 + dynMonths.length * subColsCount + totalColsCount} className="py-1.5 px-4 border-b border-slate-100/60">
+              <tr className={isDark ? "bg-[#0b0f19]/80" : "bg-slate-50/40"}>
+                <td colSpan={2 + dynMonths.length * subColsCount + totalColsCount} className={`py-1.5 px-4 border-b ${
+                  isDark ? "border-[#1e2538]" : "border-slate-100/60"
+                }`}>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-3.5 bg-blue-400 rounded-sm" />
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Regional (REG)</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-blue-300" : "text-slate-600"}`}>Regional (REG)</span>
                   </div>
                 </td>
               </tr>
               {regOutbound.map(r => (
                 <React.Fragment key={r.id}>
-                  <tr className="hover:bg-slate-50/30 transition-colors">
-                    <td className="py-2 px-4 font-bold text-[11px] text-slate-800">
+                  <tr className={`transition-colors ${isDark ? "hover:bg-[#141b2d]" : "hover:bg-slate-50/30"}`}>
+                    <td className={`py-2 px-4 font-bold text-[11px] ${isDark ? "text-slate-100" : "text-slate-800"}`}>
                       <div className="flex items-center gap-1.5">
                         {r.hasMultipleCategories ? (
                           <button 
                             onClick={() => setExpandedOutboundCds(prev => ({ ...prev, [r.cd]: !prev[r.cd] }))}
-                            className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500 shrink-0 cursor-pointer"
+                            className={`p-1 rounded transition-colors shrink-0 cursor-pointer ${
+                              isDark ? "hover:bg-[#1e2538] text-slate-400" : "hover:bg-slate-100 text-slate-500"
+                            }`}
                           >
-                            <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedOutboundCds[r.cd] ? 'rotate-90 text-slate-805' : 'text-slate-400'}`} />
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedOutboundCds[r.cd] ? `rotate-90 ${isDark ? "text-slate-200" : "text-slate-805"}` : 'text-slate-400'}`} />
                           </button>
                         ) : (
                           <div className="w-5" />
@@ -2163,7 +2387,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         CD {r.cd}
                       </div>
                     </td>
-                    <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium">{r.cat}</td>
+                    <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>{r.cat}</td>
                     {dynMonths.map(m => (
                       <React.Fragment key={m}>
                         {showFrac && (
@@ -2192,18 +2416,20 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         )}
                       </React.Fragment>
                     ))}
-                    <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-700 bg-slate-50/40 tabular-nums">
+                    <td className={`py-2 px-4 text-right font-semibold font-mono text-[11px] tabular-nums ${
+                      isDark ? "text-slate-200 bg-[#0b0f19]/30" : "text-slate-700 bg-slate-50/40"
+                    }`}>
                       {fmt(dynMonths.reduce((s, m) => s + (showFrac ? (r.md[m]?.frac || 0) : 0) + (showFech ? (r.md[m]?.fech || 0) : 0), 0))}
                     </td>
                   </tr>
                   {r.hasMultipleCategories && expandedOutboundCds[r.cd] && r.children?.map((child: any) => (
-                    <tr key={child.id} className="bg-slate-50/20 hover:bg-slate-50/40 transition-colors">
-                      <td className="py-2 px-4 font-medium text-[11px] text-slate-500 pl-8">
+                    <tr key={child.id} className={`transition-colors ${isDark ? "bg-[#0b0f19]/40 hover:bg-[#141b2d]" : "bg-slate-50/20 hover:bg-slate-50/40"}`}>
+                      <td className={`py-2 px-4 font-medium text-[11px] pl-8 ${isDark ? "text-slate-300" : "text-slate-500"}`}>
                         <div className="flex items-center gap-1">
                           <span className="text-indigo-400 font-bold select-none mr-1">↳</span> CD {child.cd}
                         </div>
                       </td>
-                      <td className="py-2 px-4 text-center text-[10px] text-slate-400 font-medium bg-slate-50/5">{child.cat}</td>
+                      <td className={`py-2 px-4 text-center text-[10px] font-medium ${isDark ? "text-slate-400 bg-black/10" : "text-slate-400 bg-slate-50/5"}`}>{child.cat}</td>
                       {dynMonths.map(m => (
                         <React.Fragment key={m}>
                           {showFrac && (
@@ -2232,7 +2458,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           )}
                         </React.Fragment>
                       ))}
-                      <td className="py-2 px-4 text-right font-normal font-mono text-[11px] text-slate-605 bg-slate-50/30 tabular-nums">
+                      <td className={`py-2 px-4 text-right font-normal font-mono text-[11px] tabular-nums ${
+                        isDark ? "text-slate-300 bg-[#0b0f19]/30" : "text-slate-605 bg-slate-50/30"
+                      }`}>
                         {fmt(dynMonths.reduce((s, m) => s + (showFrac ? (child.md[m]?.frac || 0) : 0) + (showFech ? (child.md[m]?.fech || 0) : 0), 0))}
                       </td>
                     </tr>
@@ -2241,16 +2469,32 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               ))}
 
               {/* TOTAL GERAL */}
-              <tr className="bg-slate-50 text-slate-800 text-[11px] border-t border-slate-200">
-                <td className="py-3 px-4 uppercase font-semibold tracking-wider text-slate-600">Total geral</td>
+              <tr className={`text-[11px] border-t font-semibold ${
+                isDark ? "bg-[#0b0f19] text-white border-[#1e2538]" : "bg-slate-50 text-slate-800 border-slate-200"
+              }`}>
+                <td className={`py-3 px-4 uppercase tracking-wider ${isDark ? "text-slate-300 font-bold" : "text-slate-600 font-semibold"}`}>Total geral</td>
                 <td className="py-3 text-center text-slate-400 font-normal">—</td>
                 {dynMonths.map(m => (
                   <React.Fragment key={m}>
-                    {showFrac && <td className="py-3 px-3.5 text-right font-mono text-slate-700 tabular-nums font-normal">{fmt(gtFOutbound[m] || 0)}</td>}
-                    {showFech && <td className="py-3 px-3.5 text-right font-mono text-slate-700 tabular-nums font-normal">{fmt(gtEOutbound[m] || 0)}</td>}
+                    {showFrac && (
+                      <td className={`py-3 px-3.5 text-right font-mono font-bold tabular-nums ${
+                        isDark ? "text-indigo-400" : "text-slate-700 font-normal"
+                      }`}>
+                        {fmt(gtFOutbound[m] || 0)}
+                      </td>
+                    )}
+                    {showFech && (
+                      <td className={`py-3 px-3.5 text-right font-mono font-bold tabular-nums ${
+                        isDark ? "text-sky-400" : "text-slate-700 font-normal"
+                      }`}>
+                        {fmt(gtEOutbound[m] || 0)}
+                      </td>
+                    )}
                   </React.Fragment>
                 ))}
-                <td className="py-3 px-4 text-right font-mono text-slate-700 font-normal bg-slate-50 tabular-nums">
+                <td className={`py-3 px-4 text-right font-mono font-black tabular-nums ${
+                  isDark ? "text-emerald-400 bg-emerald-950/20" : "text-slate-700 font-normal bg-slate-50"
+                }`}>
                   {fmt((showFrac ? tFOutbound : 0) + (showFech ? tEOutbound : 0))}
                 </td>
               </tr>
@@ -2262,42 +2506,170 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
   };
 
   const kpis = direction === "inbound" ? [
-    { icon: Building, wrap: "bg-violet-100 text-violet-600", label: "Inbound Total", val: inboundView === "mes" ? tI : tWeeklyI },
-    { icon: Layers, wrap: "bg-emerald-100 text-emerald-600", label: "Modo Ativo", val: inboundView === "mes" ? "Por Mês" : "Por Semana" },
-    { icon: MapPin, wrap: "bg-blue-100 text-blue-600", label: "CDs Monitorados", val: CD_LIST.length },
-    { icon: Tag, wrap: "bg-amber-100 text-amber-600", label: "Filtros Ativos", val: filt.length },
+    { 
+      icon: Building, 
+      wrapDark: "bg-violet-950/60 text-violet-300 ring-1 ring-violet-500/30",
+      wrapLight: "bg-violet-100 text-violet-700",
+      numDark: "text-violet-400",
+      numLight: "text-violet-950",
+      borderDark: "hover:border-violet-500/40",
+      label: "Inbound Total", 
+      val: inboundView === "mes" ? tI : tWeeklyI 
+    },
+    { 
+      icon: Layers, 
+      wrapDark: "bg-emerald-950/60 text-emerald-300 ring-1 ring-emerald-500/30",
+      wrapLight: "bg-emerald-100 text-emerald-700",
+      numDark: "text-emerald-400",
+      numLight: "text-emerald-950",
+      borderDark: "hover:border-emerald-500/40",
+      label: "Modo Ativo", 
+      val: inboundView === "mes" ? "Por Mês" : "Por Semana" 
+    },
+    { 
+      icon: MapPin, 
+      wrapDark: "bg-blue-950/60 text-blue-300 ring-1 ring-blue-500/30",
+      wrapLight: "bg-blue-100 text-blue-700",
+      numDark: "text-blue-400",
+      numLight: "text-blue-950",
+      borderDark: "hover:border-blue-500/40",
+      label: "CDs Monitorados", 
+      val: CD_LIST.length 
+    },
+    { 
+      icon: Tag, 
+      wrapDark: "bg-amber-950/60 text-amber-300 ring-1 ring-amber-500/30",
+      wrapLight: "bg-amber-100 text-amber-700",
+      numDark: "text-amber-400",
+      numLight: "text-amber-950",
+      borderDark: "hover:border-amber-500/40",
+      label: "Filtros Ativos", 
+      val: filt.length 
+    },
   ] : [
-    { icon: Package, wrap: "bg-indigo-100 text-indigo-600", label: "Fracionado", val: tFOutbound },
-    { icon: Truck, wrap: "bg-sky-100 text-sky-600", label: "Fechado", val: tEOutbound },
-    { icon: Layers, wrap: "bg-violet-100 text-violet-600", label: "Total Outbound", val: tFOutbound + tEOutbound },
-    { icon: Tag, wrap: "bg-amber-100 text-amber-600", label: "Registros", val: filt.length },
+    { 
+      icon: Package, 
+      wrapDark: "bg-indigo-950/60 text-indigo-300 ring-1 ring-indigo-500/30",
+      wrapLight: "bg-indigo-100 text-indigo-700",
+      numDark: "text-indigo-400",
+      numLight: "text-indigo-950",
+      borderDark: "hover:border-indigo-500/40",
+      label: "Fracionado", 
+      val: tFOutbound 
+    },
+    { 
+      icon: Truck, 
+      wrapDark: "bg-sky-950/60 text-sky-300 ring-1 ring-sky-500/30",
+      wrapLight: "bg-sky-100 text-sky-700",
+      numDark: "text-sky-400",
+      numLight: "text-sky-950",
+      borderDark: "hover:border-sky-500/40",
+      label: "Fechado", 
+      val: tEOutbound 
+    },
+    { 
+      icon: Layers, 
+      wrapDark: "bg-violet-950/60 text-violet-300 ring-1 ring-violet-500/30",
+      wrapLight: "bg-violet-100 text-violet-700",
+      numDark: "text-violet-400",
+      numLight: "text-violet-950",
+      borderDark: "hover:border-violet-500/40",
+      label: "Total Outbound", 
+      val: tFOutbound + tEOutbound 
+    },
+    { 
+      icon: Tag, 
+      wrapDark: "bg-amber-950/60 text-amber-300 ring-1 ring-amber-500/30",
+      wrapLight: "bg-amber-100 text-amber-700",
+      numDark: "text-amber-400",
+      numLight: "text-amber-950",
+      borderDark: "hover:border-amber-500/40",
+      label: "Registros", 
+      val: filt.length 
+    },
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6 space-y-6 overflow-y-auto h-full scrollbar-thin">
+    <div className={`max-w-7xl mx-auto px-6 py-6 space-y-6 overflow-y-auto h-full scrollbar-thin ${
+      isDark ? "text-slate-100" : "text-slate-900"
+    }`}>
       {notif && <div className="fixed bottom-4 right-4 z-50 bg-slate-900 text-white pl-2.5 pr-3.5 py-2 rounded-lg shadow-lg text-[11px] flex items-center gap-2"><Sparkles className="w-3.5 h-3.5 text-violet-400" />{notif}</div>}
 
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm">
+      <div className={`${isDark ? "bg-[#0f1422] border-[#1e2538]" : "bg-white border-slate-200/80"} border rounded-2xl p-5 shadow-sm transition-colors`}>
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <span className="p-2.5 rounded-xl bg-violet-50 text-violet-600 border border-violet-100"><Building className="w-5 h-5" /></span>
+            <span className={`p-2.5 rounded-xl border ${isDark ? "bg-violet-950/40 text-violet-400 border-violet-800/50" : "bg-violet-50 text-violet-600 border-violet-100"}`}>
+              <Building className="w-5 h-5" />
+            </span>
             <div>
-              <span className="text-sm font-black text-slate-850 block leading-tight">Capacidade por CD</span>
-              <span className="text-[10px] text-slate-400 font-medium">{direction === "outbound" ? "Fracionada & Fechada" : `Inbound (${inboundView === "mes" ? "Visão Mensal" : "Visão Semanal"})`}</span>
+              <span className={`text-sm font-black block leading-tight ${isDark ? "text-slate-100" : "text-slate-850"}`}>Capacidade por CD</span>
+              <span className={`text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+                {direction === "outbound" ? "Fracionada & Fechada" : `Inbound (${inboundView === "mes" ? "Visão Mensal" : "Visão Semanal"})`}
+              </span>
             </div>
-            <div className="flex bg-slate-100 border border-slate-200/60 rounded-xl p-1 ml-4">
-              <button onClick={() => setDirection("inbound")} className={`px-4 py-2 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all duration-250 ${direction === "inbound" ? "bg-blue-600 text-white shadow-md font-bold" : "text-slate-500 hover:text-slate-800"}`}>Inbound</button>
-              <button onClick={() => setDirection("outbound")} className={`px-4 py-2 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all duration-250 ${direction === "outbound" ? "bg-blue-600 text-white shadow-md font-bold" : "text-slate-500 hover:text-slate-800"}`}>Outbound</button>
+            <div className={`flex border rounded-xl p-1 ml-4 ${isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-100 border-slate-200/60"}`}>
+              <button 
+                onClick={() => setDirection("inbound")} 
+                className={`px-4 py-2 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all duration-200 ${
+                  direction === "inbound" 
+                    ? "bg-blue-600 text-white shadow-md font-bold" 
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Inbound
+              </button>
+              <button 
+                onClick={() => setDirection("outbound")} 
+                className={`px-4 py-2 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all duration-200 ${
+                  direction === "outbound" 
+                    ? "bg-blue-600 text-white shadow-md font-bold" 
+                    : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Outbound
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
-              <select value={ano} onChange={e => setAno(e.target.value)} className="text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold text-slate-600 hover:text-slate-800 focus:outline-none">{anosL.map(a => <option key={a} value={a}>{a === "Todos" ? "Ano" : a}</option>)}</select>
-              <span className="text-slate-200">|</span>
-              <select value={mes} onChange={e => setMes(e.target.value)} className="text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold text-slate-600 hover:text-slate-800 focus:outline-none"><option value="Todos">Mês</option>{mesesL.filter(m => m !== "Todos").map(m => <option key={m} value={m}>{MESES[m] || m}</option>)}</select>
-              <span className="text-slate-200">|</span>
-              <select value={cat} onChange={e => setCat(e.target.value)} className="text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer max-w-[90px] font-semibold text-slate-600 hover:text-slate-800 focus:outline-none"><option value="Todas">Cat</option>{catsL.filter(c => c !== "Todas").map(c => <option key={c} value={c}>{c}</option>)}</select>
-              <span className="text-slate-200">|</span>
+            <div className={`flex items-center gap-1.5 border rounded-xl px-3 py-2 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-200/80"
+            }`}>
+              <select 
+                value={ano} 
+                onChange={e => setAno(e.target.value)} 
+                className={`text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold focus:outline-none ${
+                  isDark ? "text-slate-200 hover:text-white" : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                {anosL.map(a => <option key={a} value={a} className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>{a === "Todos" ? "Ano" : a}</option>)}
+              </select>
+              <span className={isDark ? "text-slate-700" : "text-slate-200"}>|</span>
+              <select 
+                value={mes} 
+                onChange={e => setMes(e.target.value)} 
+                className={`text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold focus:outline-none ${
+                  isDark ? "text-slate-200 hover:text-white" : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                <option value="Todos" className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>Mês</option>
+                {mesesL.filter(m => m !== "Todos").map(m => (
+                  <option key={m} value={m} className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>{MESES[m] || m}</option>
+                ))}
+              </select>
+              <span className={isDark ? "text-slate-700" : "text-slate-200"}>|</span>
+              <select 
+                value={cat} 
+                onChange={e => setCat(e.target.value)} 
+                className={`text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer max-w-[90px] font-semibold focus:outline-none ${
+                  isDark ? "text-slate-200 hover:text-white" : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                <option value="Todas" className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>Cat</option>
+                {catsL.filter(c => c !== "Todas").map(c => (
+                  <option key={c} value={c} className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>{c}</option>
+                ))}
+              </select>
+              <span className={isDark ? "text-slate-700" : "text-slate-200"}>|</span>
               <select
                 value={cd}
                 onChange={e => {
@@ -2310,17 +2682,35 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                     }
                   }
                 }}
-                className="text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold text-slate-600 hover:text-slate-800 focus:outline-none"
+                className={`text-xs bg-transparent border-none py-0.5 px-1 cursor-pointer font-semibold focus:outline-none ${
+                  isDark ? "text-slate-200 hover:text-white" : "text-slate-600 hover:text-slate-800"
+                }`}
               >
-                <option value="Todos">CD</option>
-                {CD_LIST.map(c => <option key={c.cd} value={c.cd}>{c.cd}</option>)}
+                <option value="Todos" className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>CD</option>
+                {CD_LIST.map(c => (
+                  <option key={c.cd} value={c.cd} className={isDark ? "bg-[#0f1422] text-slate-100" : ""}>{c.cd}</option>
+                ))}
               </select>
             </div>
-            <button onClick={() => load()} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 shadow-sm active:scale-95 transition-all" title="Sincronizar"><RefreshCw className={`w-4 h-4 text-slate-500 ${loading ? 'animate-spin' : ''}`} /></button>
+            <button 
+              onClick={() => load()} 
+              className={`p-2 border rounded-xl shadow-sm active:scale-95 transition-all cursor-pointer ${
+                isDark 
+                  ? "bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d] text-slate-300" 
+                  : "bg-white border-slate-200 hover:bg-slate-50 text-slate-500"
+              }`} 
+              title="Sincronizar"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
             
             <button
               onClick={() => setShowKpis(!showKpis)}
-              className={`p-2 bg-white border rounded-xl shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-bold cursor-pointer ${showKpis ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'}`}
+              className={`p-2 border rounded-xl shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-bold cursor-pointer ${
+                showKpis 
+                  ? isDark ? 'border-amber-500/40 text-amber-400 bg-amber-950/20 hover:bg-amber-950/30' : 'border-amber-200 text-amber-600 hover:bg-amber-50' 
+                  : isDark ? 'border-[#1e2538] text-slate-400 bg-[#0b0f19] hover:bg-[#141b2d]' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
               title={showKpis ? "Ocultar KPIs" : "Exibir KPIs"}
             >
               {showKpis ? <ChevronDown className="w-4 h-4 rotate-180 transition-transform duration-300" /> : <Plus className="w-4 h-4" />}
@@ -2329,21 +2719,40 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
             
             {/* ✅ BOTÕES DE LANÇAMENTO - APENAS PARA ADMIN */}
             {isAdmin && direction === "inbound" && (
-              <button 
-                onClick={() => {
-                  setBulkModal("inbound");
-                  setBulkMes(mes !== "Todos" ? Number(mes) : 7);
-                  setBulkCd(cd !== "Todos" ? Number(cd) : 1965);
-                  // ✅ Pega a primeira categoria do CD selecionado
-                  const categorias = CATEGORIAS_POR_CD[String(cd !== "Todos" ? cd : 1965)] || ["Mercearia"];
-                  setBulkCategoria(categorias[0]);
-                }}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-wider bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
-                title="Lançamento em Lote Inbound"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Lançar Inbound
-              </button>
+              <>
+                <button 
+                  onClick={() => {
+                    setBulkModal("inbound");
+                    setBulkMes(mes !== "Todos" ? Number(mes) : 7);
+                    setBulkCd(cd !== "Todos" ? Number(cd) : 1965);
+                    const categorias = CATEGORIAS_POR_CD[String(cd !== "Todos" ? cd : 1965)] || ["Mercearia"];
+                    setBulkCategoria(categorias[0]);
+                  }}
+                  className="px-3 py-2 text-[10px] font-black uppercase tracking-wider bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                  title="Lançamento em Lote Inbound"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Lançar Inbound
+                </button>
+
+                <button 
+                  onClick={() => {
+                    setShowAntecipacaoModal(true);
+                    setAntecipacaoCd(cd !== "Todos" ? Number(cd) : 1965);
+                    const categorias = CATEGORIAS_POR_CD[String(cd !== "Todos" ? cd : 1965)] || ["Mercearia"];
+                    setAntecipacaoCategoria(categorias[0]);
+                    setAntecipacaoDataInicio("");
+                    setAntecipacaoDataFim("");
+                    setAntecipacaoQtd("");
+                    setAntecipacaoError(null);
+                  }}
+                  className="px-3 py-2 text-[10px] font-black uppercase tracking-wider bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                  title="Lançar Antecipação Inbound"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Antecipação
+                </button>
+              </>
             )}
             
             {isAdmin && direction === "outbound" && (
@@ -2352,7 +2761,6 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   setBulkModal("outbound");
                   setBulkMes(mes !== "Todos" ? Number(mes) : 7);
                   setBulkCd(cd !== "Todos" ? Number(cd) : 1965);
-                  // ✅ Pega a primeira categoria do CD selecionado
                   const categorias = CATEGORIAS_POR_CD[String(cd !== "Todos" ? cd : 1965)] || ["Mercearia"];
                   setBulkCategoria(categorias[0]);
                 }}
@@ -2364,7 +2772,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               </button>
             )}
 
-            {/* ✅ BOTÃO DOWNLOAD EXCEL (.XLSX) - SUTIL E MINIMALISTA */}
+            {/* ✅ BOTÃO DOWNLOAD EXCEL (.XLSX) */}
             <button 
               onClick={() => {
                 setExcelAno(ano);
@@ -2374,31 +2782,66 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 setExcelDirection(direction === "inbound" ? "inbound" : "outbound");
                 setShowExcelModal(true);
               }}
-              className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs hover:border-emerald-300 hover:text-emerald-700"
+              className={`px-2.5 py-1.5 text-xs font-semibold border rounded-xl transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs ${
+                isDark 
+                  ? "bg-[#0b0f19] hover:bg-[#141b2d] border-[#1e2538] text-slate-200 hover:border-emerald-600/60 hover:text-emerald-400" 
+                  : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700"
+              }`}
               title="Download dos dados em Excel (.xlsx) com seleção de filtros"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden sm:inline text-[11px]">Excel</span>
             </button>
 
-            {/* ✅ BOTÃO APRESENTAÇÃO PARA E-MAIL - SUTIL E MINIMALISTA */}
+            {/* ✅ BOTÃO APRESENTAÇÃO PARA E-MAIL */}
             <button 
               onClick={() => {
                 setPresentationType(direction === "inbound" ? "inbound" : "outbound");
                 setShowPresentationModal(true);
               }}
-              className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs hover:border-purple-300 hover:text-purple-700"
+              className={`px-2.5 py-1.5 text-xs font-semibold border rounded-xl transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-2xs ${
+                isDark 
+                  ? "bg-[#0b0f19] hover:bg-[#141b2d] border-[#1e2538] text-slate-200 hover:border-purple-600/60 hover:text-purple-400" 
+                  : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:border-purple-300 hover:text-purple-700"
+              }`}
               title="Gerar tabela e texto em formato de apresentação para e-mail"
             >
-              <Presentation className="w-3.5 h-3.5 text-purple-600" />
+              <Presentation className="w-3.5 h-3.5 text-purple-500" />
               <span className="hidden sm:inline text-[11px]">Apresentação</span>
             </button>
             
             {direction === "outbound" && (
-              <div className="flex bg-slate-100 border border-slate-200/60 rounded-xl p-1">
-                <button onClick={() => setView("all")} className={`px-3 py-1.5 text-[10px] font-bold rounded-lg ${view === "all" ? "bg-white shadow-sm text-slate-800 font-extrabold" : "text-slate-500 hover:text-slate-800"}`}>Todos</button>
-                <button onClick={() => setView("frac")} className={`px-3 py-1.5 text-[10px] font-bold rounded-lg ${view === "frac" ? "bg-indigo-600 text-white font-extrabold shadow-sm" : "text-slate-500 hover:text-indigo-600"}`}>Frac.</button>
-                <button onClick={() => setView("fech")} className={`px-3 py-1.5 text-[10px] font-bold rounded-lg ${view === "fech" ? "bg-sky-600 text-white font-extrabold shadow-sm" : "text-slate-500 hover:text-sky-600"}`}>Fech.</button>
+              <div className={`flex border rounded-xl p-1 ${isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-100 border-slate-200/60"}`}>
+                <button 
+                  onClick={() => setView("all")} 
+                  className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                    view === "all" 
+                      ? isDark ? "bg-[#182035] text-white shadow-sm font-extrabold border border-slate-700/60" : "bg-white shadow-sm text-slate-800 font-extrabold" 
+                      : isDark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  Todos
+                </button>
+                <button 
+                  onClick={() => setView("frac")} 
+                  className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                    view === "frac" 
+                      ? "bg-indigo-600 text-white font-extrabold shadow-sm" 
+                      : isDark ? "text-slate-400 hover:text-indigo-400" : "text-slate-500 hover:text-indigo-600"
+                  }`}
+                >
+                  Frac.
+                </button>
+                <button 
+                  onClick={() => setView("fech")} 
+                  className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                    view === "fech" 
+                      ? "bg-sky-600 text-white font-extrabold shadow-sm" 
+                      : isDark ? "text-slate-400 hover:text-sky-400" : "text-slate-500 hover:text-sky-600"
+                  }`}
+                >
+                  Fech.
+                </button>
               </div>
             )}
           </div>
@@ -2417,12 +2860,31 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 py-1">
               {kpis.map((k, i) => (
-                <div key={i} className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-all">
-                  <span className={`p-3.5 rounded-2xl shrink-0 ${k.wrap}`}><k.icon className="w-5 h-5" /></span>
+                <div 
+                  key={i} 
+                  className={`border rounded-2xl p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-all ${
+                    isDark ? `bg-[#0f1422] border-[#1e2538] ${k.borderDark}` : "bg-white border-slate-200/80 hover:border-slate-300"
+                  }`}
+                >
+                  <span className={`p-3.5 rounded-2xl shrink-0 ${
+                    isDark ? k.wrapDark : k.wrapLight
+                  }`}>
+                    <k.icon className="w-5 h-5" />
+                  </span>
                   <div className="min-w-0">
-                    <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest leading-none">{k.label}</p>
-                    <p className="text-base font-black font-mono text-slate-900 mt-1 leading-none">{typeof k.val === 'number' ? fmt(k.val) : k.val}</p>
-                    <span className="text-[9px] text-slate-400 mt-1 block">Metas planejadas</span>
+                    <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${
+                      isDark ? "text-slate-400" : "text-slate-600"
+                    }`}>
+                      {k.label}
+                    </p>
+                    <p className={`text-xl font-black font-mono mt-1.5 leading-none tabular-nums ${
+                      isDark ? k.numDark : k.numLight
+                    }`}>
+                      {typeof k.val === 'number' ? fmt(k.val) : k.val}
+                    </p>
+                    <span className={`text-[10px] font-medium mt-1 block ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                      Metas planejadas
+                    </span>
                   </div>
                 </div>
               ))}
@@ -2432,15 +2894,19 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
       </AnimatePresence>
 
       {loading && metas.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-20 justify-center bg-white border border-slate-200 rounded-2xl shadow-sm">
-          <div className="w-8 h-8 border-4 border-slate-200 border-t-violet-600 rounded-full animate-spin" />
-          <span className="text-xs text-slate-400 font-bold">Carregando metas de capacidades...</span>
+        <div className={`flex flex-col items-center gap-3 py-20 justify-center border rounded-2xl shadow-sm ${
+          isDark ? "bg-[#0f1422] border-[#1e2538]" : "bg-white border-slate-200"
+        }`}>
+          <div className="w-8 h-8 border-4 border-slate-700 border-t-violet-500 rounded-full animate-spin" />
+          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-500"}`}>Carregando metas de capacidades...</span>
         </div>
       ) : filt.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-20 bg-white border border-slate-200 rounded-2xl shadow-sm text-slate-400 text-center space-y-3">
-          <Info className="w-10 h-10 text-slate-350" />
-          <p className="text-xs font-bold text-slate-700">Nenhum dado cadastrado para o filtro selecionado.</p>
-          <p className="text-[10px] text-slate-450">Insira novas informações clicando no botão de lançamento.</p>
+        <div className={`flex flex-col items-center justify-center p-20 border rounded-2xl shadow-sm text-center space-y-3 ${
+          isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-400" : "bg-white border-slate-200 text-slate-400"
+        }`}>
+          <Info className={`w-10 h-10 ${isDark ? "text-slate-600" : "text-slate-350"}`} />
+          <p className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-700"}`}>Nenhum dado cadastrado para o filtro selecionado.</p>
+          <p className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>Insira novas informações clicando no botão de lançamento.</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -2448,21 +2914,33 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
             const totalPending = dynMonths.reduce((acc, m) => acc + getPendingFracionadoForMonth(m, ano !== "Todos" ? Number(ano) : 2026).length, 0);
             if (totalPending === 0) return null;
             return (
-              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-orange-500/10 border border-amber-300/80 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-4 text-amber-950 shadow-sm transition-all relative overflow-hidden">
+              <div className={`border rounded-2xl p-4 flex items-center justify-between flex-wrap gap-4 shadow-sm transition-all relative overflow-hidden ${
+                isDark 
+                  ? "bg-amber-950/20 border-amber-500/30 text-amber-200" 
+                  : "bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-orange-500/10 border-amber-300/80 text-amber-950"
+              }`}>
                 <div className="absolute -left-1 top-0 bottom-0 w-1.5 bg-gradient-to-b from-amber-500 to-orange-500 rounded-l-2xl" />
                 <div className="flex items-center gap-3.5 pl-1">
-                  <div className="p-2.5 bg-amber-500/20 text-amber-600 rounded-xl ring-1 ring-amber-400/30 flex items-center justify-center shrink-0 shadow-2xs">
-                    <AlertCircle className="w-5 h-5 text-amber-600 animate-pulse" />
+                  <div className={`p-2.5 rounded-xl ring-1 flex items-center justify-center shrink-0 shadow-2xs ${
+                    isDark ? "bg-amber-500/20 text-amber-400 ring-amber-500/30" : "bg-amber-500/20 text-amber-600 ring-amber-400/30"
+                  }`}>
+                    <AlertCircle className="w-5 h-5 text-amber-500 animate-pulse" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-amber-950 uppercase tracking-wider">Capacidades Pendentes</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100/80 text-amber-800 border border-amber-300/60 shadow-2xs">
+                      <span className={`text-xs font-black uppercase tracking-wider ${isDark ? "text-amber-300" : "text-amber-950"}`}>
+                        Capacidades Pendentes
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${
+                        isDark ? "bg-amber-900/60 text-amber-300 border-amber-600/40" : "bg-amber-100/80 text-amber-800 border-amber-300/60"
+                      }`}>
                         Atenção Necessária
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-900/90 font-medium mt-0.5">
-                      Existem <strong className="font-extrabold text-amber-950 bg-amber-200/60 px-1.5 py-0.5 rounded-md border border-amber-300/40">{totalPending} CD(s)</strong> pendentes de capacidade fracionada no período.
+                    <p className={`text-[11px] font-medium mt-0.5 ${isDark ? "text-amber-200/90" : "text-amber-900/90"}`}>
+                      Existem <strong className={`font-extrabold px-1.5 py-0.5 rounded-md border ${
+                        isDark ? "bg-amber-900/70 text-amber-200 border-amber-600/50" : "bg-amber-200/60 text-amber-950 border-amber-300/40"
+                      }`}>{totalPending} CD(s)</strong> pendentes de capacidade fracionada no período.
                     </p>
                   </div>
                 </div>
@@ -2477,11 +2955,17 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           setPendingFracModal({ month: m, items: pending });
                           setSelectedFracItem(null);
                         }}
-                        className="group px-3 py-1.5 bg-white hover:bg-amber-500 hover:text-white text-amber-900 border border-amber-300/80 hover:border-amber-500 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-2xs hover:shadow-md hover:shadow-amber-500/20"
+                        className={`group px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-2xs ${
+                          isDark 
+                            ? "bg-[#0b0f19] hover:bg-amber-500 text-amber-300 hover:text-white border border-amber-500/40" 
+                            : "bg-white hover:bg-amber-500 hover:text-white text-amber-900 border border-amber-300/80"
+                        }`}
                       >
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 group-hover:text-white transition-colors" />
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400 group-hover:text-white transition-colors" />
                         <span>{getMonthLabel(m)}</span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 group-hover:bg-amber-600 text-amber-800 group-hover:text-white text-[10px] font-extrabold transition-colors">
+                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold transition-colors ${
+                          isDark ? "bg-amber-900/60 group-hover:bg-amber-600 text-amber-300 group-hover:text-white" : "bg-amber-100 group-hover:bg-amber-600 text-amber-800 group-hover:text-white"
+                        }`}>
                           {pending.length}
                         </span>
                       </button>
@@ -2501,46 +2985,81 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
       )}
 
       {edit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 transform animate-in slide-in-from-bottom-4 duration-300">
-            <div className="px-5 py-4 border-b flex items-center justify-between bg-slate-50/70">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-[320px] rounded-2xl shadow-2xl overflow-hidden border transform animate-in slide-in-from-bottom-4 duration-300 ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200/80 text-slate-900"
+          }`}>
+            <div className={`px-5 py-4 border-b flex items-center justify-between ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/70 border-slate-200"
+            }`}>
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl border ${edit.tp === "frac" ? "bg-indigo-50 border-indigo-100 text-indigo-600" : edit.tp === "fech" ? "bg-sky-50 border-sky-100 text-sky-600" : "bg-violet-50 border-violet-100 text-violet-600"}`}>
+                <div className={`p-2.5 rounded-xl border ${
+                  edit.tp === "frac" 
+                    ? isDark ? "bg-indigo-950/50 border-indigo-700/50 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-600"
+                    : edit.tp === "fech" 
+                      ? isDark ? "bg-sky-950/50 border-sky-700/50 text-sky-300" : "bg-sky-50 border-sky-100 text-sky-600"
+                      : isDark ? "bg-violet-950/50 border-violet-700/50 text-violet-300" : "bg-violet-50 border-violet-100 text-violet-600"
+                }`}>
                   {edit.tp === "frac" ? <Package className="w-4.5 h-4.5" /> : edit.tp === "fech" ? <Truck className="w-4.5 h-4.5" /> : <Building className="w-4.5 h-4.5" />}
                 </div>
                 <div>
-                  <span className="text-sm font-extrabold text-slate-850 block leading-tight">{edit.semana !== undefined ? "Alterar Semana" : "Alterar Mês"}</span>
-                  <p className="text-[10px] text-slate-500 font-bold mt-0.5">CD {edit.cd} • {edit.cat}</p>
+                  <span className={`text-sm font-extrabold block leading-tight ${isDark ? "text-slate-100" : "text-slate-850"}`}>
+                    {edit.semana !== undefined ? "Alterar Semana" : "Alterar Mês"}
+                  </span>
+                  <p className={`text-[10px] font-bold mt-0.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>CD {edit.cd} • {edit.cat}</p>
                 </div>
               </div>
-              <button onClick={() => setEdit(null)} className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"><X className="w-4.5 h-4.5 text-slate-400" /></button>
+              <button 
+                onClick={() => setEdit(null)} 
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200 text-slate-400"
+                }`}
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
             </div>
             <div className="p-5 space-y-4">
-              <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-3.5 text-xs space-y-2">
-                <div className="flex justify-between"><span className="text-slate-400 font-semibold">Mês</span><span className="font-extrabold text-slate-700">{getMonthLabel(edit.m)}</span></div>
+              <div className={`border rounded-xl p-3.5 text-xs space-y-2 ${
+                isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/70 border-slate-100"
+              }`}>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Mês</span>
+                  <span className={`font-extrabold ${isDark ? "text-slate-200" : "text-slate-700"}`}>{getMonthLabel(edit.m)}</span>
+                </div>
                 {edit.semana !== undefined && (
-                  <div className="flex justify-between"><span className="text-slate-400 font-semibold">Semana</span><span className="font-extrabold text-violet-600">Semana {edit.semana}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-semibold">Semana</span>
+                    <span className="font-extrabold text-violet-400">Semana {edit.semana}</span>
+                  </div>
                 )}
-                <div className="flex justify-between"><span className="text-slate-400 font-semibold">Fluxo</span><span className="font-extrabold text-slate-700">{edit.tp === "frac" ? "Fracionado" : edit.tp === "fech" ? "Fechado" : "Inbound"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400 font-semibold">Valor Atual</span><span className="font-mono font-black text-slate-800">{fmt(edit.v)}</span></div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Fluxo</span>
+                  <span className={`font-extrabold ${isDark ? "text-slate-200" : "text-slate-700"}`}>
+                    {edit.tp === "frac" ? "Fracionado" : edit.tp === "fech" ? "Fechado" : "Inbound"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Valor Atual</span>
+                  <span className={`font-mono font-black ${isDark ? "text-emerald-400" : "text-slate-800"}`}>{fmt(edit.v)}</span>
+                </div>
               </div>
               {/* Mensagem de Erro/Alerta no Modal */}
               {editError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start gap-2.5 text-rose-800 animate-in fade-in duration-200">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                <div className="bg-rose-950/40 border border-rose-800/60 rounded-xl p-3 flex items-start gap-2.5 text-rose-300 animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                   <div className="text-[11px] leading-relaxed">
                     <p className="font-extrabold">Erro ao salvar</p>
-                    <p className="text-rose-700 mt-0.5">{editError}</p>
+                    <p className="text-rose-300 mt-0.5">{editError}</p>
                   </div>
                 </div>
               )}
 
               {isEditDuplicate && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 text-amber-800 animate-in fade-in duration-200">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 flex items-start gap-2.5 text-amber-300 animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                   <div className="text-[11px] leading-relaxed">
                     <p className="font-extrabold">Informações já efetuadas</p>
-                    <p className="text-amber-700 mt-0.5">
+                    <p className="text-amber-300 mt-0.5">
                       Já existem metas cadastradas para o CD {edit.cd} ({edit.cat}) no período selecionado. Não é permitido sobrepor dados existentes.
                     </p>
                   </div>
@@ -2554,13 +3073,19 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   autoFocus
                   value={edit.nv}
                   onChange={e => setEdit((p: any) => p ? { ...p, nv: e.target.value.replace(/\D/g, "") } : null)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black font-mono text-center focus:outline-none focus:ring-2 focus:ring-violet-400/60 focus:border-violet-400 focus:bg-white transition-all shadow-sm"
+                  className={`w-full px-4 py-3 border rounded-xl text-lg font-black font-mono text-center focus:outline-none focus:ring-2 focus:ring-violet-400/60 focus:border-violet-400 transition-all shadow-sm ${
+                    isDark 
+                      ? "bg-[#0b0f19] border-[#1e2538] text-white focus:bg-[#141b2d]" 
+                      : "bg-slate-50 border-slate-200 text-slate-900 focus:bg-white"
+                  }`}
                   placeholder="0"
                 />
               </div>
 
               {direction === "outbound" && (
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2.5">
+                <div className={`p-3 rounded-xl border space-y-2.5 ${
+                  isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-100"
+                }`}>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -2575,7 +3100,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       }}
                       className="rounded text-violet-600 focus:ring-violet-400 w-4 h-4 cursor-pointer"
                     />
-                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
+                    <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       Alterar a partir de um dia específico?
                     </span>
                   </label>
@@ -2591,9 +3116,11 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         onChange={e => setEditStartDate(e.target.value)}
                         min={`2026-${String(edit.m).padStart(2, "0")}-01`}
                         max={`2026-${String(edit.m).padStart(2, "0")}-${new Date(2026, edit.m, 0).getDate()}`}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-violet-400 font-mono"
+                        className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-violet-400 font-mono ${
+                          isDark ? "bg-[#141b2d] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                        }`}
                       />
-                      <span className="text-[9.5px] text-amber-600 font-medium block leading-snug">
+                      <span className="text-[9.5px] text-amber-500 font-medium block leading-snug">
                         * A alteração afetará do dia selecionado em diante.
                       </span>
                     </div>
@@ -2601,11 +3128,18 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 </div>
               )}
               <div className="flex justify-end gap-2.5 pt-2">
-                <button onClick={() => setEdit(null)} className="px-4 py-2 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => setEdit(null)} 
+                  className={`px-4 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                    isDark ? "text-slate-400 bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d]" : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  Cancelar
+                </button>
                 <button
                   onClick={save}
                   disabled={loading}
-                  className={`px-4.5 py-2 text-xs font-black text-white rounded-xl flex items-center gap-2 shadow-md transition-all active:scale-95 ${
+                  className={`px-4.5 py-2 text-xs font-black text-white rounded-xl flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer ${
                     edit.semana !== undefined ? "bg-violet-600 hover:bg-violet-700" : "bg-amber-600 hover:bg-amber-700"
                   }`}
                 >
@@ -2625,47 +3159,68 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
       )}
 
       {bulkModal && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 transform animate-in slide-in-from-bottom-4 duration-300">
-            <div className="px-6 py-4 border-b flex items-center justify-between bg-slate-50/70">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border transform animate-in slide-in-from-bottom-4 duration-300 ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200/80 text-slate-900"
+          }`}>
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/70 border-slate-200"
+            }`}>
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl border ${bulkModal === "outbound" ? "bg-indigo-50 border-indigo-100 text-indigo-600" : "bg-violet-50 border-violet-100 text-violet-600"}`}>
+                <div className={`p-2.5 rounded-xl border ${
+                  bulkModal === "outbound" 
+                    ? isDark ? "bg-indigo-950/50 border-indigo-700/50 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-600"
+                    : isDark ? "bg-violet-950/50 border-violet-700/50 text-violet-300" : "bg-violet-50 border-violet-100 text-violet-600"
+                }`}>
                   {bulkModal === "outbound" ? <Truck className="w-4.5 h-4.5" /> : <Building className="w-4.5 h-4.5" />}
                 </div>
                 <div>
-                  <span className="text-sm font-extrabold text-slate-850 block leading-tight">
+                  <span className={`text-sm font-extrabold block leading-tight ${isDark ? "text-slate-100" : "text-slate-850"}`}>
                     {bulkModal === "outbound" ? "Lançar Outbound" : "Lançar Inbound"}
                   </span>
-                  <p className="text-[10px] text-slate-500 font-bold mt-0.5">Novo planejamento de capacidades</p>
+                  <p className={`text-[10px] font-bold mt-0.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>Novo planejamento de capacidades</p>
                 </div>
               </div>
-              <button onClick={() => setBulkModal(null)} className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"><X className="w-4.5 h-4.5 text-slate-400" /></button>
+              <button 
+                onClick={() => setBulkModal(null)} 
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200 text-slate-400"
+                }`}
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
             </div>
 
             <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto scrollbar-thin">
               {showContinuePrompt ? (
                 <div className="py-4 px-2 text-center space-y-4 animate-in fade-in duration-200 max-w-md mx-auto">
-                  <div className="w-12 h-12 bg-emerald-50 border border-emerald-200/80 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto shadow-xs border ${
+                    isDark ? "bg-emerald-950/40 border-emerald-700/60 text-emerald-300" : "bg-emerald-50 border-emerald-200/80 text-emerald-600"
+                  }`}>
                     <CheckCircle className="w-6 h-6" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-sm font-extrabold text-slate-850">Lançamento Efetuado com Sucesso!</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">{lastSavedInfo}</p>
+                    <h3 className={`text-sm font-extrabold ${isDark ? "text-slate-100" : "text-slate-850"}`}>Lançamento Efetuado com Sucesso!</h3>
+                    <p className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>{lastSavedInfo}</p>
                   </div>
                   
-                  <div className="p-3 bg-violet-50/70 border border-violet-100 rounded-xl space-y-1">
-                    <p className="text-xs font-bold text-violet-950">Continuar Lançando?</p>
-                    <p className="text-[10px] text-violet-600 font-medium">Deseja realizar outro lançamento de {bulkModal === "outbound" ? "Outbound" : "Inbound"}?</p>
+                  <div className={`p-3 rounded-xl space-y-1 border ${
+                    isDark ? "bg-violet-950/30 border-violet-800/40" : "bg-violet-50/70 border-violet-100"
+                  }`}>
+                    <p className={`text-xs font-bold ${isDark ? "text-violet-300" : "text-violet-950"}`}>Continuar Lançando?</p>
+                    <p className={`text-[10px] font-medium ${isDark ? "text-violet-400" : "text-violet-600"}`}>Deseja realizar outro lançamento de {bulkModal === "outbound" ? "Outbound" : "Inbound"}?</p>
                   </div>
 
-                  <div className="flex items-center justify-center gap-3 pt-3 border-t border-slate-100">
+                  <div className={`flex items-center justify-center gap-3 pt-3 border-t ${isDark ? "border-[#1e2538]" : "border-slate-100"}`}>
                     <button
                       type="button"
                       onClick={() => {
                         setShowContinuePrompt(false);
                         setBulkModal(null);
                       }}
-                      className="px-5 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer active:scale-95"
+                      className={`px-5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 ${
+                        isDark ? "text-slate-300 bg-[#0b0f19] hover:bg-[#141b2d] border border-[#1e2538]" : "text-slate-600 bg-slate-100 hover:bg-slate-200"
+                      }`}
                     >
                       Não (Fechar)
                     </button>
@@ -2685,21 +3240,21 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 <>
                   {/* Mensagem de Erro/Alerta no Modal */}
                   {bulkError && (
-                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start gap-2.5 text-rose-800 animate-in fade-in duration-200">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                    <div className="bg-rose-950/40 border border-rose-800/60 rounded-xl p-3 flex items-start gap-2.5 text-rose-300 animate-in fade-in duration-200">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                       <div className="text-[11px] leading-relaxed">
                         <p className="font-extrabold">Erro na Operação</p>
-                        <p className="text-rose-700 mt-0.5">{bulkError}</p>
+                        <p className="text-rose-300 mt-0.5">{bulkError}</p>
                       </div>
                     </div>
                   )}
 
                   {isBulkDuplicate && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 text-amber-800 animate-in fade-in duration-200">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                    <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 flex items-start gap-2.5 text-amber-300 animate-in fade-in duration-200">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                       <div className="text-[11px] leading-relaxed">
                         <p className="font-extrabold">Informações já efetuadas</p>
-                        <p className="text-amber-700 mt-0.5">
+                        <p className="text-amber-300 mt-0.5">
                           Já existem metas de {bulkModal === "outbound" ? "Outbound" : "Inbound"} cadastradas para o CD {bulkCd} ({bulkCategoria}) em {getMonthLabel(bulkMes)}/{bulkAno}{bulkModal === "inbound" ? ` na Semana ${bulkSemanaInbound || 1}` : ""}. Não é permitido sobrepor dados existentes.
                         </p>
                       </div>
@@ -2714,10 +3269,12 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       <select 
                         value={bulkAno} 
                         onChange={e => setBulkAno(Number(e.target.value))} 
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                          isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        }`}
                       >
-                        <option value={2026}>2026</option>
-                        <option value={2027}>2027</option>
+                        <option value={2026} className={isDark ? "bg-[#0f1422] text-white" : ""}>2026</option>
+                        <option value={2027} className={isDark ? "bg-[#0f1422] text-white" : ""}>2027</option>
                       </select>
                     </div>
 
@@ -2727,10 +3284,12 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       <select 
                         value={bulkMes} 
                         onChange={e => setBulkMes(Number(e.target.value))} 
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                          isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        }`}
                       >
                         {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                          <option key={m} value={m}>{getMonthLabel(m)}</option>
+                          <option key={m} value={m} className={isDark ? "bg-[#0f1422] text-white" : ""}>{getMonthLabel(m)}</option>
                         ))}
                       </select>
                     </div>
@@ -2743,14 +3302,15 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         onChange={(e) => {
                           const newCd = Number(e.target.value);
                           setBulkCd(newCd);
-                          // ✅ Atualiza a categoria para a primeira do novo CD
                           const categorias = CATEGORIAS_POR_CD[String(newCd)] || ["Mercearia"];
                           setBulkCategoria(categorias[0]);
                         }}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                          isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        }`}
                       >
                         {CD_LIST.map(c => (
-                          <option key={c.cd} value={c.cd}>CD {c.cd} ({c.group})</option>
+                          <option key={c.cd} value={c.cd} className={isDark ? "bg-[#0f1422] text-white" : ""}>CD {c.cd} ({c.group})</option>
                         ))}
                       </select>
                     </div>
@@ -2761,10 +3321,12 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       <select 
                         value={bulkCategoria} 
                         onChange={e => setBulkCategoria(e.target.value)} 
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                          isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        }`}
                       >
                         {(CATEGORIAS_POR_CD[String(bulkCd)] || ["Mercearia"]).map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
+                          <option key={cat} value={cat} className={isDark ? "bg-[#0f1422] text-white" : ""}>{cat}</option>
                         ))}
                       </select>
                       <p className="text-[8px] text-slate-400 mt-0.5">Categorias disponíveis para o CD selecionado</p>
@@ -2781,7 +3343,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           value={bulkCapFracionada} 
                           onChange={e => setBulkCapFracionada(e.target.value.replace(/\D/g, ""))} 
                           placeholder="0"
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                            isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          }`}
                         />
                       </div>
                       <div className="space-y-1">
@@ -2791,7 +3355,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           value={bulkCapFechada} 
                           onChange={e => setBulkCapFechada(e.target.value.replace(/\D/g, ""))} 
                           placeholder="0"
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                            isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          }`}
                         />
                       </div>
                     </div>
@@ -2799,28 +3365,36 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
 
                   {/* INBOUND FIELDS - CAMPOS INDIVIDUAIS POR SEMANA */}
                   {bulkModal === "inbound" && (
-                    <div className="space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
-                      <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
+                    <div className={`space-y-3 p-3.5 rounded-xl border ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-200/80"
+                    }`}>
+                      <div className={`flex items-center justify-between border-b pb-2 ${isDark ? "border-[#1e2538]" : "border-slate-200/70"}`}>
                         <div>
-                          <label className="text-[10px] uppercase font-extrabold tracking-wider text-violet-700 block">
+                          <label className={`text-[10px] uppercase font-extrabold tracking-wider block ${isDark ? "text-violet-300" : "text-violet-700"}`}>
                             Capacidade Inbound por Semana
                           </label>
-                          <p className="text-[10px] text-slate-500 font-medium">Informe a capacidade de Inbound para cada semana desejada</p>
+                          <p className={`text-[10px] font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>Informe a capacidade de Inbound para cada semana desejada</p>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200/70">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                          isDark ? "bg-[#141b2d] text-slate-300 border-[#1e2538]" : "bg-white text-slate-500 border-slate-200/70"
+                        }`}>
                           {getWeeksInMonth(bulkAno || 2026, bulkMes)} semanas em {getMonthLabel(bulkMes)}
                         </span>
                       </div>
 
                       {/* Atalho para replicar valor */}
-                      <div className="flex items-center gap-2 p-2 bg-violet-50/50 rounded-lg border border-violet-100/80">
-                        <span className="text-[11px] font-semibold text-violet-900 shrink-0">Replicar valor para todas:</span>
+                      <div className={`flex items-center gap-2 p-2 rounded-lg border ${
+                        isDark ? "bg-violet-950/30 border-violet-800/40" : "bg-violet-50/50 border-violet-100/80"
+                      }`}>
+                        <span className={`text-[11px] font-semibold shrink-0 ${isDark ? "text-violet-200" : "text-violet-900"}`}>Replicar valor para todas:</span>
                         <input 
                           type="text"
                           placeholder="Ex: 5000"
                           value={replicateValue}
                           onChange={e => setReplicateValue(e.target.value.replace(/\D/g, ""))}
-                          className="w-28 px-2.5 py-1 bg-white border border-violet-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          className={`w-28 px-2.5 py-1 border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                            isDark ? "bg-[#0b0f19] border-violet-800/50 text-white" : "bg-white border-violet-200 text-slate-900"
+                          }`}
                         />
                         <button
                           type="button"
@@ -2862,7 +3436,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                                   }}
                                   className="w-3.5 h-3.5 text-violet-600 rounded border-slate-300/80 focus:ring-1 focus:ring-violet-400 cursor-pointer accent-violet-600 opacity-80 hover:opacity-100 transition-opacity"
                                 />
-                                <span className="text-xs font-bold text-slate-700">Selecionar Todas as Semanas</span>
+                                <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-700"}`}>Selecionar Todas as Semanas</span>
                               </label>
                             </div>
 
@@ -2875,8 +3449,12 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                                     key={w}
                                     className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
                                       isChecked 
-                                        ? "bg-white border-violet-200/90 shadow-2xs" 
-                                        : "bg-slate-100/50 border-slate-200/60 opacity-60"
+                                        ? isDark 
+                                          ? "bg-[#141b2d] border-violet-700/60 shadow-2xs" 
+                                          : "bg-white border-violet-200/90 shadow-2xs" 
+                                        : isDark 
+                                          ? "bg-[#0b0f19] border-[#1e2538] opacity-50" 
+                                          : "bg-slate-100/50 border-slate-200/60 opacity-60"
                                     }`}
                                   >
                                     <label className="flex items-center gap-2 cursor-pointer shrink-0 w-28">
@@ -2892,7 +3470,7 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                                         }}
                                         className="w-3.5 h-3.5 text-violet-600 rounded border-slate-300/80 focus:ring-1 focus:ring-violet-400 cursor-pointer accent-violet-600 opacity-80 hover:opacity-100 transition-opacity"
                                       />
-                                      <span className="text-xs font-bold text-slate-800">Semana {w}</span>
+                                      <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>Semana {w}</span>
                                     </label>
 
                                     <div className="flex-1 flex items-center gap-2">
@@ -2908,7 +3486,11 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                                           }
                                         }}
                                         placeholder="0"
-                                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:bg-slate-100 disabled:text-slate-400"
+                                        className={`w-full px-3 py-1.5 border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                                          isDark 
+                                            ? "bg-[#0b0f19] border-[#1e2538] text-white focus:bg-[#182035] disabled:bg-[#080c14] disabled:text-slate-600" 
+                                            : "bg-slate-50 border-slate-200 text-slate-900 focus:bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                                        }`}
                                       />
                                       <span className="text-[10px] font-bold text-slate-400 shrink-0">un.</span>
                                     </div>
@@ -2917,9 +3499,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                               })}
                             </div>
 
-                            <p className="text-[10px] text-slate-500 font-medium pt-1">
+                            <p className="text-[10px] text-slate-400 font-medium pt-1">
                               {bulkSelectedWeeks.length === 0 ? (
-                                <span className="text-rose-600 font-bold">⚠️ Selecione pelo menos uma semana e informe seu valor.</span>
+                                <span className="text-rose-400 font-bold">⚠️ Selecione pelo menos uma semana e informe seu valor.</span>
                               ) : (
                                 `Lançamento individual configurado para ${bulkSelectedWeeks.length} semana(s) de ${getMonthLabel(bulkMes)}.`
                               )}
@@ -2930,12 +3512,19 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2.5 pt-4 border-t">
-                    <button onClick={() => setBulkModal(null)} className="px-4 py-2 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
+                  <div className={`flex justify-end gap-2.5 pt-4 border-t ${isDark ? "border-[#1e2538]" : "border-slate-200"}`}>
+                    <button 
+                      onClick={() => setBulkModal(null)} 
+                      className={`px-4 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                        isDark ? "text-slate-400 bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d]" : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      Cancelar
+                    </button>
                     <button 
                       onClick={saveBulk} 
                       disabled={loading}
-                      className={`px-4.5 py-2 text-xs font-black text-white rounded-xl flex items-center gap-2 shadow-md transition-all active:scale-95 ${
+                      className={`px-4.5 py-2 text-xs font-black text-white rounded-xl flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer ${
                         bulkModal === "outbound" ? "bg-indigo-600 hover:bg-indigo-700" : "bg-violet-600 hover:bg-violet-700"
                       }`}
                     >
@@ -2957,19 +3546,25 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
       )}
       {/* MODAL DE CDS PENDENTES E PREENCHIMENTO EXCLUSIVO DE FRACIONADO */}
       {pendingFracModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200 transform animate-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border transform animate-in slide-in-from-bottom-4 duration-300 ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200 text-slate-900"
+          }`}>
             {/* Header */}
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+            <div className={`px-5 py-4 border-b flex items-center justify-between ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/80 border-slate-200"
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-600">
+                <div className={`p-2 rounded-xl border ${
+                  isDark ? "bg-amber-950/50 border-amber-700/50 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-600"
+                }`}>
                   <AlertCircle className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-sm font-black text-slate-850 block leading-tight">
+                  <span className={`text-sm font-black block leading-tight ${isDark ? "text-slate-100" : "text-slate-850"}`}>
                     CDs Pendentes - Fracionado
                   </span>
-                  <p className="text-[11px] text-slate-500 font-bold mt-0.5">
+                  <p className={`text-[11px] font-bold mt-0.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                     Mês de {getMonthLabel(pendingFracModal.month)} • {pendingFracModal.items.length} pendência(s)
                   </p>
                 </div>
@@ -2979,16 +3574,18 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   setPendingFracModal(null);
                   setSelectedFracItem(null);
                 }}
-                className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200 text-slate-400"
+                }`}
               >
-                <X className="w-4.5 h-4.5 text-slate-400" />
+                <X className="w-4.5 h-4.5" />
               </button>
             </div>
 
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto scrollbar-thin">
               {!selectedFracItem ? (
                 <>
-                  <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                  <p className={`text-xs font-semibold leading-relaxed ${isDark ? "text-slate-300" : "text-slate-600"}`}>
                     Selecione uma das CDs pendentes abaixo para abrir o formulário de preenchimento exclusivo para <strong>Fracionado</strong> em {getMonthLabel(pendingFracModal.month)}:
                   </p>
 
@@ -3008,17 +3605,23 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                           setFracValueInput(item.currentVal > 0 ? String(item.currentVal) : "");
                           setFracError(null);
                         }}
-                        className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200/90 rounded-xl flex items-center justify-between transition-all cursor-pointer group shadow-2xs"
+                        className={`p-3 border rounded-xl flex items-center justify-between transition-all cursor-pointer group shadow-2xs ${
+                          isDark 
+                            ? "bg-[#0b0f19] hover:bg-[#141b2d] border-[#1e2538] hover:border-indigo-700/60" 
+                            : "bg-slate-50 hover:bg-slate-100 border-slate-200/90 hover:border-indigo-300"
+                        }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 rounded-md text-xs font-mono font-bold border border-slate-300/60 shrink-0">
+                          <span className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border shrink-0 ${
+                            isDark ? "bg-[#141b2d] text-slate-200 border-[#1e2538]" : "bg-slate-200/80 text-slate-700 border-slate-300/60"
+                          }`}>
                             CD {item.cd}
                           </span>
                           <div>
-                            <span className="text-xs font-extrabold text-slate-800 block">
+                            <span className={`text-xs font-extrabold block ${isDark ? "text-white" : "text-slate-800"}`}>
                               {item.cat}
                             </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
+                            <span className={`text-[10px] font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                               Grupo: {item.group} • {item.currentVal > 0 ? `${item.currentVal.toLocaleString('pt-BR')} un` : 'Pendente (0 un)'}
                             </span>
                           </div>
@@ -3037,27 +3640,29 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <button
                     onClick={() => setSelectedFracItem(null)}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer mb-2"
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer mb-2"
                   >
                     ← Voltar para a lista de CDs pendentes
                   </button>
 
-                  <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl p-3.5 text-xs space-y-1.5">
-                    <div className="flex justify-between"><span className="text-slate-500 font-semibold">CD</span><span className="font-extrabold text-slate-800">CD {selectedFracItem.cd} ({selectedFracItem.group})</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500 font-semibold">Categoria</span><span className="font-extrabold text-indigo-700">{selectedFracItem.cat}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500 font-semibold">Mês</span><span className="font-extrabold text-slate-700">{getMonthLabel(selectedFracItem.month)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500 font-semibold">Campo</span><span className="font-mono font-extrabold text-indigo-600">Capacidade Fracionada APENAS</span></div>
+                  <div className={`border rounded-xl p-3.5 text-xs space-y-1.5 ${
+                    isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-indigo-50/80 border-indigo-100"
+                  }`}>
+                    <div className="flex justify-between"><span className={isDark ? "text-slate-400 font-semibold" : "text-slate-500 font-semibold"}>CD</span><span className={`font-extrabold ${isDark ? "text-white" : "text-slate-800"}`}>CD {selectedFracItem.cd} ({selectedFracItem.group})</span></div>
+                    <div className="flex justify-between"><span className={isDark ? "text-slate-400 font-semibold" : "text-slate-500 font-semibold"}>Categoria</span><span className="font-extrabold text-indigo-400">{selectedFracItem.cat}</span></div>
+                    <div className="flex justify-between"><span className={isDark ? "text-slate-400 font-semibold" : "text-slate-500 font-semibold"}>Mês</span><span className={`font-extrabold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{getMonthLabel(selectedFracItem.month)}</span></div>
+                    <div className="flex justify-between"><span className={isDark ? "text-slate-400 font-semibold" : "text-slate-500 font-semibold"}>Campo</span><span className="font-mono font-extrabold text-indigo-400">Capacidade Fracionada APENAS</span></div>
                   </div>
 
                   {fracError && (
-                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start gap-2 text-rose-800 text-xs">
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="bg-rose-950/40 border border-rose-800/60 rounded-xl p-3 flex items-start gap-2 text-rose-300 text-xs">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                       <span>{fracError}</span>
                     </div>
                   )}
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-extrabold tracking-wider text-slate-500 block">
+                    <label className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">
                       Capacidade Fracionada (unidades)
                     </label>
                     <input
@@ -3065,7 +3670,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                       autoFocus
                       value={fracValueInput}
                       onChange={e => setFracValueInput(e.target.value.replace(/\D/g, ""))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black font-mono text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-900 shadow-xs"
+                      className={`w-full px-4 py-3 border rounded-xl text-lg font-black font-mono text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs ${
+                        isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                      }`}
                       placeholder="0"
                     />
                     <span className="text-[10px] text-slate-400 block text-center">
@@ -3073,17 +3680,19 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                     </span>
                   </div>
 
-                  <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-200">
+                  <div className={`flex justify-end gap-2.5 pt-2 border-t ${isDark ? "border-[#1e2538]" : "border-slate-200"}`}>
                     <button
                       onClick={() => setSelectedFracItem(null)}
-                      className="px-4 py-2 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                      className={`px-4 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                        isDark ? "text-slate-400 bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d]" : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50"
+                      }`}
                     >
                       Voltar
                     </button>
                     <button
                       onClick={saveSingleFracionado}
                       disabled={fracSaving}
-                      className="px-5 py-5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                      className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
                     >
                       {fracSaving ? (
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -3104,39 +3713,55 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
 
       {/* ✅ MODAL DE APRESENTAÇÃO PARA E-MAIL */}
       {showPresentationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden border flex flex-col max-h-[90vh] ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200/80 text-slate-900"
+          }`}>
             {/* Header */}
-            <div className="px-6 py-4 border-b flex items-center justify-between bg-slate-50/80 shrink-0">
+            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/80 border-slate-200"
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-purple-50 border border-purple-100 rounded-xl text-purple-600">
+                <div className={`p-2.5 rounded-xl border ${
+                  isDark ? "bg-purple-950/50 border-purple-800/50 text-purple-300" : "bg-purple-50 border-purple-100 text-purple-600"
+                }`}>
                   <Presentation className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-850">Apresentação para E-mail</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">Tabela e texto formatados prontos para copiar e colar no e-mail</p>
+                  <h3 className={`text-sm font-extrabold ${isDark ? "text-slate-100" : "text-slate-850"}`}>Apresentação para E-mail</h3>
+                  <p className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>Tabela e texto formatados prontos para copiar e colar no e-mail</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowPresentationModal(false)}
-                className="p-1.5 hover:bg-slate-200/80 rounded-lg transition-colors cursor-pointer text-slate-400 hover:text-slate-600"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200/80 text-slate-400 hover:text-slate-600"
+                }`}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Controles de Configuração da Apresentação */}
-            <div className="p-5 border-b border-slate-100 bg-slate-50/50 space-y-3 shrink-0">
+            <div className={`p-5 border-b space-y-3 shrink-0 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/50 border-slate-100"
+            }`}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block mb-1">Tipo de Dados</label>
-                  <div className="flex bg-slate-200/70 p-1 rounded-xl">
+                  <div className={`flex p-1 rounded-xl ${
+                    isDark ? "bg-[#141b2d] border border-[#1e2538]" : "bg-slate-200/70"
+                  }`}>
                     <button
                       onClick={() => {
                         setPresentationType("inbound");
                         setPresentationMessage("Bom dia, segue dados de inbound:");
                       }}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${presentationType === "inbound" ? "bg-white text-violet-700 shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        presentationType === "inbound" 
+                          ? isDark ? "bg-violet-600 text-white shadow-xs font-bold" : "bg-white text-violet-700 shadow-xs" 
+                          : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                      }`}
                     >
                       Inbound
                     </button>
@@ -3145,7 +3770,11 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         setPresentationType("outbound");
                         setPresentationMessage("Bom dia, segue dados de outbound:");
                       }}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${presentationType === "outbound" ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        presentationType === "outbound" 
+                          ? isDark ? "bg-indigo-600 text-white shadow-xs font-bold" : "bg-white text-indigo-700 shadow-xs" 
+                          : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                      }`}
                     >
                       Outbound
                     </button>
@@ -3154,7 +3783,11 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         setPresentationType("both");
                         setPresentationMessage("Bom dia, segue dados de inbound e outbound:");
                       }}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${presentationType === "both" ? "bg-white text-purple-700 shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        presentationType === "both" 
+                          ? isDark ? "bg-purple-600 text-white shadow-xs font-bold" : "bg-white text-purple-700 shadow-xs" 
+                          : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                      }`}
                     >
                       Ambos
                     </button>
@@ -3167,7 +3800,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                     type="text"
                     value={presentationMessage}
                     onChange={e => setPresentationMessage(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-400 text-slate-800"
+                    className={`w-full px-3 py-1.5 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+                      isDark ? "bg-[#141b2d] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
                     placeholder="Ex: Bom dia, segue dados de inbound e outbound"
                   />
                 </div>
@@ -3175,7 +3810,9 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
             </div>
 
             {/* Area da Prévia Formatada para E-mail */}
-            <div className="p-6 overflow-y-auto grow space-y-4 bg-slate-100/60 scrollbar-thin">
+            <div className={`p-6 overflow-y-auto grow space-y-4 scrollbar-thin ${
+              isDark ? "bg-[#080c14]" : "bg-slate-100/60"
+            }`}>
               <div 
                 ref={presentationRef}
                 id="presentation-email-content"
@@ -3330,15 +3967,21 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
             </div>
 
             {/* Footer com Botão de Copiar e Ações de Exportação */}
-            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0 flex-wrap gap-3">
-              <span className="text-[11px] text-slate-500 font-medium hidden lg:inline">
+            <div className={`px-6 py-4 border-t flex items-center justify-between shrink-0 flex-wrap gap-3 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-200"
+            }`}>
+              <span className={`text-[11px] font-medium hidden lg:inline ${
+                isDark ? "text-slate-400" : "text-slate-500"
+              }`}>
                 Escolha copiar como tabela formatada para e-mail ou como imagem PNG para colar diretamente.
               </span>
               <div className="flex items-center gap-2 flex-wrap ml-auto">
                 <button
                   type="button"
                   onClick={() => setShowPresentationModal(false)}
-                  className="px-3.5 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                  className={`px-3.5 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                    isDark ? "text-slate-300 bg-[#141b2d] border-[#1e2538] hover:bg-[#1e2740]" : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-100"
+                  }`}
                 >
                   Fechar
                 </button>
@@ -3368,13 +4011,17 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   type="button"
                   onClick={copyPresentationAsImage}
                   disabled={copyingImage}
-                  className="px-4 py-2 text-xs font-extrabold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                    isDark 
+                      ? "text-purple-300 bg-purple-950/40 hover:bg-purple-950/60 border border-purple-800/60" 
+                      : "text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200"
+                  }`}
                   title="Captura a apresentação como imagem e copia para a área de transferência"
                 >
                   {copyingImage ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
+                    <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
                   ) : copiedImageStatus ? (
-                    <Check className="w-4 h-4 text-emerald-600" />
+                    <Check className="w-4 h-4 text-emerald-400" />
                   ) : (
                     <Image className="w-4 h-4" />
                   )}
@@ -3385,10 +4032,14 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                 <button
                   type="button"
                   onClick={downloadPresentationAsImage}
-                  className="px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                  className={`px-3 py-2 text-xs font-bold border rounded-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1 ${
+                    isDark 
+                      ? "text-slate-300 bg-[#141b2d] hover:bg-[#1e2740] border-[#1e2538]" 
+                      : "text-slate-700 bg-white hover:bg-slate-100 border border-slate-200"
+                  }`}
                   title="Baixar imagem PNG da apresentação"
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <Download className="w-3.5 h-3.5 text-slate-400" />
                   Baixar PNG
                 </button>
               </div>
@@ -3401,22 +4052,30 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
       {/* 📊 MODAL DE EXPORTAÇÃO EXCEL COM SELEÇÃO DE FILTROS           */}
       {/* ============================================================ */}
       {showExcelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border flex flex-col ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200/80 text-slate-900"
+          }`}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/80 border-slate-100"
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-600">
+                <div className={`p-2.5 rounded-xl border ${
+                  isDark ? "bg-emerald-950/50 border-emerald-800/50 text-emerald-300" : "bg-emerald-50 border-emerald-100 text-emerald-600"
+                }`}>
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-850">Exportar para Excel (.xlsx)</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">Escolha os filtros e o fluxo para personalizar seu relatório</p>
+                  <h3 className={`text-sm font-extrabold ${isDark ? "text-slate-100" : "text-slate-850"}`}>Exportar para Excel (.xlsx)</h3>
+                  <p className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>Escolha os filtros e o fluxo para personalizar seu relatório</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowExcelModal(false)}
-                className="p-1.5 hover:bg-slate-200/80 rounded-lg transition-colors cursor-pointer text-slate-400 hover:text-slate-600"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200/80 text-slate-400 hover:text-slate-600"
+                }`}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3427,25 +4086,39 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               {/* Fluxo */}
               <div>
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1.5">Fluxo de Dados</label>
-                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200/60">
+                <div className={`grid grid-cols-3 gap-2 p-1 rounded-xl border ${
+                  isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-100 border-slate-200/60"
+                }`}>
                   <button
                     type="button"
                     onClick={() => setExcelDirection("inbound")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${excelDirection === "inbound" ? "bg-white text-blue-700 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"}`}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      excelDirection === "inbound" 
+                        ? isDark ? "bg-blue-600 text-white shadow-xs font-bold" : "bg-white text-blue-700 shadow-xs border border-slate-200" 
+                        : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
                     Apenas Inbound
                   </button>
                   <button
                     type="button"
                     onClick={() => setExcelDirection("outbound")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${excelDirection === "outbound" ? "bg-white text-indigo-700 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"}`}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      excelDirection === "outbound" 
+                        ? isDark ? "bg-indigo-600 text-white shadow-xs font-bold" : "bg-white text-indigo-700 shadow-xs border border-slate-200" 
+                        : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
                     Apenas Outbound
                   </button>
                   <button
                     type="button"
                     onClick={() => setExcelDirection("both")}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${excelDirection === "both" ? "bg-white text-emerald-700 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"}`}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      excelDirection === "both" 
+                        ? isDark ? "bg-emerald-600 text-white shadow-xs font-bold" : "bg-white text-emerald-700 shadow-xs border border-slate-200" 
+                        : isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
                     Ambos
                   </button>
@@ -3460,11 +4133,13 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   <select
                     value={excelMes}
                     onChange={e => setExcelMes(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
                   >
-                    <option value="Todos">Todos os Meses</option>
+                    <option value="Todos" className={isDark ? "bg-[#0f1422] text-white" : ""}>Todos os Meses</option>
                     {mesesL.filter(m => m !== "Todos").map(m => (
-                      <option key={m} value={m}>{MESES[m] || m}</option>
+                      <option key={m} value={m} className={isDark ? "bg-[#0f1422] text-white" : ""}>{MESES[m] || m}</option>
                     ))}
                   </select>
                 </div>
@@ -3484,11 +4159,13 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                         }
                       }
                     }}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
                   >
-                    <option value="Todos">Todos os CDs</option>
+                    <option value="Todos" className={isDark ? "bg-[#0f1422] text-white" : ""}>Todos os CDs</option>
                     {CD_LIST.map(c => (
-                      <option key={c.cd} value={c.cd}>CD {c.cd} ({c.group})</option>
+                      <option key={c.cd} value={c.cd} className={isDark ? "bg-[#0f1422] text-white" : ""}>CD {c.cd} ({c.group})</option>
                     ))}
                   </select>
                 </div>
@@ -3499,11 +4176,13 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   <select
                     value={excelAno}
                     onChange={e => setExcelAno(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
                   >
-                    <option value="Todos">Todos os Anos</option>
+                    <option value="Todos" className={isDark ? "bg-[#0f1422] text-white" : ""}>Todos os Anos</option>
                     {anosL.filter(a => a !== "Todos").map(a => (
-                      <option key={a} value={a}>{a}</option>
+                      <option key={a} value={a} className={isDark ? "bg-[#0f1422] text-white" : ""}>{a}</option>
                     ))}
                   </select>
                 </div>
@@ -3514,11 +4193,13 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
                   <select
                     value={excelCat}
                     onChange={e => setExcelCat(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
                   >
-                    <option value="Todas">Todas as Categorias</option>
+                    <option value="Todas" className={isDark ? "bg-[#0f1422] text-white" : ""}>Todas as Categorias</option>
                     {(excelCd !== "Todos" ? (CATEGORIAS_POR_CD[excelCd] || []) : catsL.filter(c => c !== "Todas")).map(c => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c} className={isDark ? "bg-[#0f1422] text-white" : ""}>{c}</option>
                     ))}
                   </select>
                 </div>
@@ -3526,11 +4207,15 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2.5">
+            <div className={`px-6 py-4 border-t flex items-center justify-end gap-2.5 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-100"
+            }`}>
               <button
                 type="button"
                 onClick={() => setShowExcelModal(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                className={`px-4 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                  isDark ? "text-slate-400 bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d]" : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-100"
+                }`}
               >
                 Cancelar
               </button>
@@ -3541,6 +4226,170 @@ const TblInbound = ({ titulo }: { titulo: string }) => {
               >
                 <Download className="w-4 h-4" />
                 Baixar Planilha Excel (.xlsx)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ============================================================ */}
+      {/* 🚀 MODAL DE ANTECIPAÇÃO INBOUND                              */}
+      {/* ============================================================ */}
+      {showAntecipacaoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border flex flex-col animate-in zoom-in-95 duration-200 ${
+            isDark ? "bg-[#0f1422] border-[#1e2538] text-slate-100" : "bg-white border-slate-200/80 text-slate-900"
+          }`}>
+            {/* Header */}
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50/80 border-slate-100"
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl border ${
+                  isDark ? "bg-violet-950/50 border-violet-800/50 text-violet-300" : "bg-violet-50 border-violet-100 text-violet-600"
+                }`}>
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className={`text-sm font-extrabold ${isDark ? "text-slate-100" : "text-slate-850"}`}>Lançar Antecipação Inbound</h3>
+                  <p className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>Preencha a capacidade de inbound no período solicitado</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAntecipacaoModal(false)}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#182035] text-slate-400 hover:text-slate-200" : "hover:bg-slate-200/80 text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4 text-xs">
+              {antecipacaoError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{antecipacaoError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3.5">
+                {/* CD */}
+                <div>
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                    Centro de Distribuição (CD)
+                  </label>
+                  <select
+                    value={antecipacaoCd}
+                    onChange={e => {
+                      const selected = Number(e.target.value);
+                      setAntecipacaoCd(selected);
+                      const catList = CATEGORIAS_POR_CD[String(selected)] || ["Mercearia"];
+                      setAntecipacaoCategoria(catList[0]);
+                    }}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:ring-2 focus:ring-violet-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
+                  >
+                    {CD_LIST.map(c => (
+                      <option key={c.cd} value={c.cd} className={isDark ? "bg-[#0f1422] text-white" : ""}>CD {c.cd} ({c.group})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Categoria */}
+                <div>
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    value={antecipacaoCategoria}
+                    onChange={e => setAntecipacaoCategoria(e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:ring-2 focus:ring-violet-500 focus:outline-none cursor-pointer ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
+                  >
+                    {(CATEGORIAS_POR_CD[String(antecipacaoCd)] || ["Mercearia"]).map(c => (
+                      <option key={c} value={c} className={isDark ? "bg-[#0f1422] text-white" : ""}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3.5">
+                {/* Data Início */}
+                <div>
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                    Data Início (dataInicio)
+                  </label>
+                  <input
+                    type="date"
+                    value={antecipacaoDataInicio}
+                    onChange={e => setAntecipacaoDataInicio(e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-violet-500 focus:outline-none ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
+                  />
+                </div>
+
+                {/* Data Fim */}
+                <div>
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                    Data Fim (dataFim)
+                  </label>
+                  <input
+                    type="date"
+                    value={antecipacaoDataFim}
+                    onChange={e => setAntecipacaoDataFim(e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:ring-2 focus:ring-violet-500 focus:outline-none ${
+                      isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-white border-slate-200 text-slate-800"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Quantidade */}
+              <div>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+                  Quantidade Antecipação (qtdAntecipacao)
+                </label>
+                <input
+                  type="text"
+                  value={antecipacaoQtd}
+                  onChange={e => setAntecipacaoQtd(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Ex: 1500"
+                  className={`w-full px-3 py-2.5 border rounded-xl text-sm font-mono font-black focus:outline-none focus:ring-2 focus:ring-violet-500 ${
+                    isDark ? "bg-[#0b0f19] border-[#1e2538] text-white" : "bg-slate-50 border-slate-200 text-slate-900 focus:bg-white"
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className={`px-6 py-4 border-t flex items-center justify-end gap-2.5 ${
+              isDark ? "bg-[#0b0f19] border-[#1e2538]" : "bg-slate-50 border-slate-100"
+            }`}>
+              <button
+                type="button"
+                onClick={() => setShowAntecipacaoModal(false)}
+                className={`px-4 py-2 text-xs font-bold border rounded-xl transition-colors cursor-pointer ${
+                  isDark ? "text-slate-400 bg-[#0b0f19] border-[#1e2538] hover:bg-[#141b2d]" : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveAntecipacao}
+                disabled={antecipacaoSaving}
+                className="px-5 py-2 text-xs font-extrabold text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-2"
+              >
+                {antecipacaoSaving ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                Salvar Antecipação
               </button>
             </div>
           </div>

@@ -7,6 +7,11 @@ import Capacidade_Mes from "./components/Capacidade_Mes";
 import EditMonthModal from "./components/EditMonthModal";
 import DashboardAnalitico from "./components/Dsh";
 import UserControlPage from "./components/Usuarios";
+import PainelGerencial from "./components/PainelGerencial";
+import PainelRegionais from "./components/PainelRegionais";
+import AlertaCategorias from "./components/AlertasCategorias";
+import ManhattanCapacidades from "./components/ManhattanCapacidades";
+import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
 
 // ============================================
 // 🔥 CONSTANTES DE CONFIGURAÇÃO
@@ -17,8 +22,12 @@ const STORAGE_KEYS = {
   ACTIVE_TAB: "logistics_active_tab",
   CURRENT_PAGE: "logistics_current_page",
   SESSION_LOADED: "app_session_loaded",
+  SESSION_LOGIN_TIME: "logistics_session_login_time",
+  SESSION_EXPIRED_NOTICE: "logistics_session_expired_notice",
 } as const;
 
+// 1 hora de validade da sessão (60 minutos = 3.600.000 ms)
+const SESSION_DURATION_MS = 60 * 60 * 1000;
 const DEFAULT_PAGE = "capacidades";
 const DEFAULT_TAB = "outbound";
 const DEFAULT_THEME = "dark";
@@ -44,6 +53,20 @@ const storageManager = {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USER);
       if (!saved) return null;
+
+      // 🔥 Checagem de expiração de sessão após 1 hora
+      const loginTimeStr = localStorage.getItem(STORAGE_KEYS.SESSION_LOGIN_TIME);
+      if (loginTimeStr) {
+        const loginTime = parseInt(loginTimeStr, 10);
+        if (!isNaN(loginTime) && Date.now() - loginTime >= SESSION_DURATION_MS) {
+          console.warn("⏳ Sessão expirada após 1 hora. Limpando dados do usuário.");
+          storageManager.removeUser(true);
+          return null;
+        }
+      } else {
+        localStorage.setItem(STORAGE_KEYS.SESSION_LOGIN_TIME, String(Date.now()));
+      }
+
       const parsed = JSON.parse(saved);
       return parsed.token ? parsed : null;
     } catch {
@@ -52,9 +75,32 @@ const storageManager = {
   },
   saveUser: (user: User): void => {
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+    localStorage.setItem(STORAGE_KEYS.SESSION_LOGIN_TIME, String(Date.now()));
+    localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_NOTICE);
   },
-  removeUser: (): void => {
+  removeUser: (isExpired: boolean = false): void => {
     localStorage.removeItem(STORAGE_KEYS.USER);
+    localStorage.removeItem(STORAGE_KEYS.SESSION_LOGIN_TIME);
+    localStorage.removeItem("auth_token");
+    if (isExpired) {
+      localStorage.setItem(STORAGE_KEYS.SESSION_EXPIRED_NOTICE, "true");
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_NOTICE);
+    }
+  },
+  getSessionTimeRemaining: (): number => {
+    const loginTimeStr = localStorage.getItem(STORAGE_KEYS.SESSION_LOGIN_TIME);
+    if (!loginTimeStr) return 0;
+    const loginTime = parseInt(loginTimeStr, 10);
+    if (isNaN(loginTime)) return 0;
+    const elapsed = Date.now() - loginTime;
+    return Math.max(0, SESSION_DURATION_MS - elapsed);
+  },
+  hasSessionExpiredNotice: (): boolean => {
+    return localStorage.getItem(STORAGE_KEYS.SESSION_EXPIRED_NOTICE) === "true";
+  },
+  clearSessionExpiredNotice: (): void => {
+    localStorage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_NOTICE);
   },
   getTheme: (): "light" | "dark" => {
     const saved = localStorage.getItem(STORAGE_KEYS.THEME);
@@ -81,6 +127,14 @@ export default function App() {
     return null;
   });
   
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(() => {
+    if (storageManager.hasSessionExpiredNotice()) {
+      storageManager.clearSessionExpiredNotice();
+      return "Sua sessão expirou após 1 hora de uso contínuo por motivos de segurança. Por favor, realize o login novamente.";
+    }
+    return null;
+  });
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [theme, setTheme] = useState<"light" | "dark">(storageManager.getTheme);
   const [activeTab, setActiveTab] = useState<"inbound" | "outbound">(storageManager.getActiveTab);
@@ -180,24 +234,74 @@ export default function App() {
   }, [notificationTimer]);
 
   // ============================================
-  // 🔥 HANDLERS
+  // 🔥 HANDLERS & SESSION MONITOR
   // ============================================
   const toggleTheme = useCallback(() => {
     setTheme(prev => prev === "light" ? "dark" : "light");
   }, []);
 
   const handleLogout = useCallback(() => {
-    storageManager.removeUser();
+    storageManager.removeUser(false);
     sessionManager.clear();
     setUser(null);
+    setSessionExpiredNotice(null);
     setCurrentPage(DEFAULT_PAGE);
     setActiveTab(DEFAULT_TAB);
     console.log("🚪 Usuário deslogado");
   }, []);
 
+  const handleSessionExpired = useCallback(() => {
+    console.warn("🚨 Sessão expirada: 1 hora de uso contínuo atingida.");
+    storageManager.removeUser(true);
+    sessionManager.clear();
+    setUser(null);
+    setSessionExpiredNotice("Sua sessão expirou após 1 hora de uso contínuo por motivos de segurança. Por favor, realize o login novamente.");
+    setCurrentPage(DEFAULT_PAGE);
+    setActiveTab(DEFAULT_TAB);
+  }, []);
+
+  // 🔥 Monitor de Expiração da Sessão (1 Hora)
+  useEffect(() => {
+    if (!user) return;
+
+    const checkSession = () => {
+      const remaining = storageManager.getSessionTimeRemaining();
+      if (remaining <= 0) {
+        handleSessionExpired();
+      }
+    };
+
+    // Verificação imediata
+    const remaining = storageManager.getSessionTimeRemaining();
+    if (remaining <= 0) {
+      handleSessionExpired();
+      return;
+    }
+
+    // Timer preciso para exatamente 1 hora
+    const expiryTimer = setTimeout(() => {
+      handleSessionExpired();
+    }, remaining);
+
+    // Intervalo de segurança a cada 10s (para checar hibernação ou background tabs)
+    const interval = setInterval(checkSession, 10000);
+
+    // Eventos de ativação/foco da janela
+    window.addEventListener("focus", checkSession);
+    document.addEventListener("visibilitychange", checkSession);
+
+    return () => {
+      clearTimeout(expiryTimer);
+      clearInterval(interval);
+      window.removeEventListener("focus", checkSession);
+      document.removeEventListener("visibilitychange", checkSession);
+    };
+  }, [user, handleSessionExpired]);
+
   const handleLoginSuccess = useCallback((userData: User) => {
     storageManager.saveUser(userData);
     sessionManager.markAsLoaded();
+    setSessionExpiredNotice(null);
     setUser(userData);
     setCurrentPage(DEFAULT_PAGE);
     setActiveTab(DEFAULT_TAB);
@@ -273,11 +377,15 @@ export default function App() {
   // ============================================
   if (!user) {
     return (
-      <LoginScreen 
-        onLoginSuccess={handleLoginSuccess}
-        theme={theme}
-        onThemeToggle={toggleTheme}
-      />
+      <>
+        <LoginScreen 
+          onLoginSuccess={handleLoginSuccess}
+          theme={theme}
+          onThemeToggle={toggleTheme}
+          sessionExpiredNotice={sessionExpiredNotice}
+        />
+        
+      </>
     );
   }
 
@@ -287,7 +395,7 @@ export default function App() {
   return (
     <div className={theme === "dark" 
       ? "dark bg-[#0a0e1a] min-h-screen text-slate-100 transition-colors duration-300" 
-      : "light bg-slate-50 min-h-screen text-slate-800 transition-colors duration-300"
+      : "light bg-[#fbfcfd] min-h-screen text-slate-900 transition-colors duration-300"
     }>
       <Layout
         user={user}
@@ -314,6 +422,7 @@ export default function App() {
           <Capacidade_Mes 
             currentUser={user} 
             showNotification={showNotification} 
+            theme={theme}
           />
         )}
         
@@ -322,6 +431,58 @@ export default function App() {
             theme={theme} 
             showNotification={showNotification} 
             user={user} 
+          />
+        )}
+
+        {currentPage === "painel-gerencial" && (
+          <PainelGerencial 
+            theme={theme} 
+            showNotification={showNotification} 
+            user={user} 
+            onPageChange={setCurrentPage}
+            onThemeToggle={toggleTheme}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {currentPage === "painel-regionais" && (
+          <PainelRegionais 
+            theme={theme} 
+            showNotification={showNotification} 
+            user={user} 
+            onPageChange={setCurrentPage}
+            onThemeToggle={toggleTheme}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {currentPage === "alerta-categorias" && (
+          <AlertaCategorias 
+            theme={theme} 
+            showNotification={showNotification} 
+            user={user} 
+            onPageChange={setCurrentPage}
+            onThemeToggle={toggleTheme}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {currentPage === "manhattan-capacidades" && (
+          <ManhattanCapacidades
+            theme={theme}
+            showNotification={showNotification}
+            user={user}
+            onPageChange={setCurrentPage}
+            onThemeToggle={toggleTheme}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {currentPage === "projecao-cd" && (
+          <ProjecaoOcupacaoCD
+            theme={theme}
+            showNotification={showNotification}
+            onPageChange={setCurrentPage}
           />
         )}
 
@@ -340,6 +501,9 @@ export default function App() {
           editMode={activeTab}
         />
       </Layout>
+
+      {/* Robô Assistente de IA Flutuante */}
+      
     </div>
   );
 }

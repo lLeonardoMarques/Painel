@@ -85,7 +85,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
 
   // Fallback Demo Mode state for local preview environments
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
-    return localStorage.getItem("user_control_demo_mode") === "true";
+    return localStorage.getItem("user_control_demo_mode") === "false";
   });
 
   const initialMockUsers = useMemo<RegistrationUser[]>(() => [

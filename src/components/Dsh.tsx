@@ -396,6 +396,11 @@ export default function DashboardAnalitico({ theme, showNotification, user }: Da
       if (filterDay && item.dataMovimentacao !== filterDay) return false;
 
       return true;
+  })
+      .sort((a, b) => {
+        
+      return new Date(a.dataMovimentacao).getTime() - 
+             new Date(b.dataMovimentacao).getTime();
     });
   }, [capacidades, selectedCd, selectedCat, selectedMonth, selectedCdCategory, filterMonth, filterWeek, filterDay]);
 
@@ -800,9 +805,10 @@ export default function DashboardAnalitico({ theme, showNotification, user }: Da
               (filterDay && entry.dateStr === filterDay && viewMode === "diario");
             return isHighlighted ? "rgba(16, 185, 129, 0.85)" : "rgba(16, 185, 129, 0.2)";
           }),
+          
           borderColor: "rgba(16, 185, 129, 1)",
           borderWidth: 1.5,
-          borderRadius: 0,
+          borderRadius: 1,
         },
         {
           label: "Inserções Remuneradas",
@@ -1138,7 +1144,7 @@ export default function DashboardAnalitico({ theme, showNotification, user }: Da
   const hasActiveFilters = selectedCd !== "all" || selectedMonth !== "all" || selectedCat !== "all" || isInteractiveFiltered;
 
   return (
-    <div className={`p-4 sm:p-6 space-y-6 ${isDark ? 'text-[#e2e8f0] bg-slate-950' : 'text-[#00122e] bg-[#f8fafc]'} font-sans min-h-screen transition-colors duration-300`}>
+    <div className={`p-2 sm:p-4 space-y-4 ${isDark ? 'text-[#e2e8f0]' : 'text-[#00122e]'} font-sans w-full h-full flex-1 min-h-0 overflow-y-auto transition-colors duration-300`}>
       
       {/* HEADER & FILTERS BAR */}
       <div className={`${colors.background} p-4 sm:p-5 rounded-3xl border ${colors.border} shadow-xs transition-all duration-300`}>

@@ -95,24 +95,161 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
   const [error, setError] = useState<string | null>(null);
   const [apiSource, setApiSource] = useState<"api" | "local_fallback">("api");
   
-  // Dynamic filter states (selectedCd starts as empty string, defaulted to the first CD in list)
-  const [selectedCd, setSelectedCd] = useState<string>("");
-  const [selectedCat, setSelectedCat] = useState<string>("all");
+  // ==========================================
+  // [PERSISTÊNCIA & FILTROS PROFISSIONAIS]
+  // Lendo estados inicializados a partir do localStorage para que o estado do dashboard
+  // permaneça idêntico quando o usuário trocar de abas ou recarregar a página.
+  // ==========================================
+  const [selectedCd, setSelectedCd] = useState<string>(() => {
+    try {
+      return localStorage.getItem("nasa_inbound_selected_cd") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  const [selectedCat, setSelectedCat] = useState<string>(() => {
+    try {
+      return localStorage.getItem("nasa_inbound_selected_cat") || "all";
+    } catch {
+      return "all";
+    }
+  });
+
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_selected_month");
+      if (saved) return saved;
+    } catch {}
     const d = new Date();
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, "0");
     return `${year}-${month}`;
   });
-  
-  // Chart Drilldown State: Click on any bar/line element to filter the entire dashboard by that date
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  
-  // Weekly filter state
-  const [selectedWeek, setSelectedWeek] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState<boolean>(true);
-  const [showDetailTable, setShowDetailTable] = useState<boolean>(false);
-  const [showCards, setShowCards] = useState<boolean>(true);
+
+  // Drilldown do gráfico: Filtra todo o painel ao clicar em uma barra/linha
+  const [selectedDate, setSelectedDate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("nasa_inbound_selected_date") || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [selectedWeek, setSelectedWeek] = useState<string>(() => {
+    try {
+      return localStorage.getItem("nasa_inbound_selected_week") || "all";
+    } catch {
+      return "all";
+    }
+  });
+
+  const [showFilters, setShowFilters] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_show_filters");
+      return saved !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  const [showDetailTable, setShowDetailTable] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_show_table");
+      return saved === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const [showCards, setShowCards] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_show_cards");
+      return saved !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  // ==========================================
+  // [SISTEMA DE SIMULAÇÃO AVANÇADA - WHAT-IF]
+  // Estados para simulação de acréscimo de capacidade de recebimento (0% a 100%)
+  // e ajuste de agendas de sistema G.A. para modelagem de gargalos em tempo real.
+  // ==========================================
+  const [simulatedCapacityPercent, setSimulatedCapacityPercent] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_sim_capacity");
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const [simulatedAgendasPercent, setSimulatedAgendasPercent] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("nasa_inbound_sim_agendas");
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const [showSimSubmenu, setShowSimSubmenu] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("nasa_inbound_show_sim_submenu") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  // Salva os valores de filtros e simulações no localStorage sempre que alterados
+  useEffect(() => {
+    if (selectedCd) localStorage.setItem("nasa_inbound_selected_cd", selectedCd);
+  }, [selectedCd]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_selected_cat", selectedCat);
+  }, [selectedCat]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_selected_month", selectedMonth);
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    if (selectedDate) {
+      localStorage.setItem("nasa_inbound_selected_date", selectedDate);
+    } else {
+      localStorage.removeItem("nasa_inbound_selected_date");
+    }
+  }, [selectedDate]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_selected_week", selectedWeek);
+  }, [selectedWeek]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_show_filters", String(showFilters));
+  }, [showFilters]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_show_table", String(showDetailTable));
+  }, [showDetailTable]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_show_cards", String(showCards));
+  }, [showCards]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_sim_capacity", String(simulatedCapacityPercent));
+  }, [simulatedCapacityPercent]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_sim_agendas", String(simulatedAgendasPercent));
+  }, [simulatedAgendasPercent]);
+
+  useEffect(() => {
+    localStorage.setItem("nasa_inbound_show_sim_submenu", String(showSimSubmenu));
+  }, [showSimSubmenu]);
 
   const chartRef = useRef<any>(null);
 
@@ -357,17 +494,20 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
     let daysInMeta = 0;
 
     filteredData.forEach(item => {
-      const cap = item.capacidade;
+      // Aplicando simulação What-If de capacidade adicional e ajustes de agenda G.A. em tempo real
+      const cap = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
       const agen = item.agendado;
       const rec = item.recebido;
+      const agendasSistemaSimuladas = Math.round((item.agendasSistema || 0) * (1 + simulatedAgendasPercent / 100));
 
       sumCapacidade += cap;
       sumAgendado += agen;
       sumRecebido += rec;
-      sumAgendasSistema += (item.agendasSistema || 0);
+      sumAgendasSistema += agendasSistemaSimuladas;
       sumNoShow += (item.noShow || 0);
 
-      const isOver = item.agendamentoECapacidade;
+      // Verificação dinâmica de sobrecarga baseada na capacidade SIMULADA
+      const isOver = agen > cap;
 
       if (!isOver) {
         daysInMeta++;
@@ -376,7 +516,7 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
 
     const pctDiasNaMeta = filteredData.length > 0 ? Math.round((daysInMeta / filteredData.length) * 100) : 0;
     
-    // Total No-Show / Total Agenda G.A
+    // Total No-Show / Total Agenda G.A simulada
     const noShowPct = sumAgendasSistema > 0 ? Math.round((sumNoShow / sumAgendasSistema) * 100) : 0;
 
     // 2. Weekday-only calculations for Media & Max Recebido
@@ -412,7 +552,7 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
       allDaysCount: filteredData.length,
       weekdayCount: weekdayRecords.length
     };
-  }, [filteredData]);
+  }, [filteredData, simulatedCapacityPercent, simulatedAgendasPercent]);
 
   const isDarkMode = theme === "dark";
 
@@ -424,23 +564,26 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
       return label;
     });
 
-    // Color code agendado line based on overload status
+    // Color code agendado line based on simulated overload status
     const agendadoBorderColors = filteredDataDropdowns.map(item => {
-      const isOver = item.agendamentoECapacidade;
+      const capSim = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
+      const isOver = item.agendado > capSim;
       const isDimmed = selectedDate !== null && item.data !== selectedDate;
       const alpha = isDimmed ? "0.15" : "1";
       return isOver ? `rgba(239, 68, 68, ${alpha})` : `rgba(139, 92, 246, ${alpha})`;
     });
 
     const agendadoBgColors = filteredDataDropdowns.map(item => {
-      const isOver = item.agendamentoECapacidade;
+      const capSim = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
+      const isOver = item.agendado > capSim;
       const isDimmed = selectedDate !== null && item.data !== selectedDate;
       const alpha = isDimmed ? "0.15" : "0.75";
       return isOver ? `rgba(239, 68, 68, ${alpha})` : `rgba(139, 92, 246, ${alpha})`;
     });
 
     const recebidoBgColors = filteredDataDropdowns.map(item => {
-      const isOver = item.agendamentoECapacidade;
+      const capSim = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
+      const isOver = item.agendado > capSim;
       const isDimmed = selectedDate !== null && item.data !== selectedDate;
       const alpha = isDimmed ? "0.15" : "0.75";
       // Rule true / false: true (overload) = red, false (normal) = green
@@ -448,7 +591,8 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
     });
 
     const recebidoBorderColors = filteredDataDropdowns.map(item => {
-      const isOver = item.agendamentoECapacidade;
+      const capSim = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
+      const isOver = item.agendado > capSim;
       const isDimmed = selectedDate !== null && item.data !== selectedDate;
       const alpha = isDimmed ? "0.15" : "1";
       return isOver ? `rgba(239, 68, 68, ${alpha})` : `rgba(34, 197, 94, ${alpha})`;
@@ -472,7 +616,7 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
         {
           type: "line" as const,
           label: "Capacidade In",
-          data: filteredDataDropdowns.map(item => item.capacidade),
+          data: filteredDataDropdowns.map(item => Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100))),
           borderColor: filteredDataDropdowns.map(item => {
             const isDimmed = selectedDate !== null && item.data !== selectedDate;
             return isDimmed ? "rgba(249, 115, 22, 0.15)" : "#f97316";
@@ -545,7 +689,7 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
         {
           type: "line" as const,
           label: "Agenda G.A",
-          data: filteredDataDropdowns.map(item => item.agendasSistema || 0),
+          data: filteredDataDropdowns.map(item => Math.round((item.agendasSistema || 0) * (1 + simulatedAgendasPercent / 100))),
           backgroundColor: agendaSistemaBgColors,
           borderColor: agendaSistemaBorderColors,
           borderWidth: 2,
@@ -607,7 +751,7 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
         }
       ]
     };
-  }, [filteredDataDropdowns, selectedDate, isDarkMode]);
+  }, [filteredDataDropdowns, selectedDate, isDarkMode, simulatedCapacityPercent, simulatedAgendasPercent]);
 
   const chartOptions = useMemo(() => {
     return {
@@ -724,11 +868,19 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
   const fmt = (val: number) => val.toLocaleString("pt-BR");
 
   return (
-    <div className={`p-6 space-y-6 ${isDarkMode ? "text-[#e2e8f0]" : "text-[#00122e]"} font-medium`}>
+    <div className={`p-2 sm:p-4 space-y-4 ${isDarkMode ? "text-[#e2e8f0]" : "text-[#00122e]"} font-medium w-full h-full flex-1 min-h-0 overflow-y-auto`}>
       
       {/* HEADER SECTION */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-transparent p-6 rounded-3xl border border-slate-200/50 dark:border-slate-800/50 transition-all duration-300">
         
+        <div className="text-left">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 font-mono flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Telemetria de Planejamento Logístico
+          </h3>
+          <h2 className="text-xl font-black tracking-tight mt-0.5">
+            Portal de Inbound GPA
+          </h2>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Active Date Filter (Drilldown) Indicator */}
@@ -744,8 +896,6 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
               </button>
             </div>
           )}
-
-          {/* API Status */}
 
 
           {/* Quick Cards Toggle */}
@@ -774,6 +924,20 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
             <span>{showFilters ? "Ocultar Filtros" : "Exibir Filtros"}</span>
           </button>
 
+          {/* Simulation Toggle Button */}
+          <button
+            onClick={() => setShowSimSubmenu(!showSimSubmenu)}
+            className={`px-3.5 py-1.5 border rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+              showSimSubmenu || simulatedCapacityPercent > 0 || simulatedAgendasPercent > 0
+                ? "bg-rose-600 border-rose-600 text-white shadow-md shadow-rose-500/10"
+                : "bg-transparent border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+            title="Abrir simulador dinâmico de capacidade adicional e agenda G.A"
+          >
+            <Sliders className="w-3.5 h-3.5 animate-pulse" />
+            <span>Simulador What-If {simulatedCapacityPercent > 0 || simulatedAgendasPercent > 0 ? `(${simulatedCapacityPercent > 0 ? `+${simulatedCapacityPercent}% Cap` : ""}${simulatedCapacityPercent > 0 && simulatedAgendasPercent > 0 ? " / " : ""}${simulatedAgendasPercent > 0 ? `+${simulatedAgendasPercent}% Agd` : ""})` : ""}</span>
+          </button>
+
           {/* Refresh Button */}
           <button
             onClick={fetchData}
@@ -785,6 +949,125 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
           </button>
         </div>
       </div>
+
+      {/* DYNAMIC WHAT-IF SIMULATION SUBMENU PANEL */}
+      <AnimatePresence>
+        {showSimSubmenu && (
+          <motion.div
+            key="sim-submenu-panel"
+            initial={{ opacity: 0, y: -10, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0, y: -10, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-gradient-to-br from-rose-500/5 to-amber-500/5 dark:from-rose-500/10 dark:to-amber-500/10 border border-rose-500/20 rounded-3xl p-6 text-left">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 pb-5 border-b border-rose-500/10">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-rose-500 font-mono flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 animate-pulse" /> Motor de Modelagem Predictiva What-If
+                  </h3>
+                  <h2 className="text-base font-black tracking-tight mt-0.5">
+                    Simulação de Incremento de Infraestrutura e Agendamento GA
+                  </h2>
+                </div>
+                {(simulatedCapacityPercent > 0 || simulatedAgendasPercent > 0) && (
+                  <button
+                    onClick={() => {
+                      setSimulatedCapacityPercent(0);
+                      setSimulatedAgendasPercent(0);
+                      showNotification("Simulador resetado com sucesso para os valores padrão.");
+                    }}
+                    className="px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-500 hover:text-rose-600 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer border border-rose-500/30"
+                  >
+                    Resetar Simulação (Baseline)
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Capacity Slider (0% to 100%) */}
+                <div className="lg:col-span-4 space-y-3 bg-white/45 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 font-mono">Capacidade Adicional CD</span>
+                    <span className="text-xs font-black text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded font-mono">+{simulatedCapacityPercent}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={simulatedCapacityPercent}
+                    onChange={(e) => setSimulatedCapacityPercent(parseInt(e.target.value, 10))}
+                    className="w-full accent-rose-500 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none"
+                  />
+                  <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400">
+                    <span>0% (Baseline)</span>
+                    <span>+50%</span>
+                    <span>+100%</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed font-mono">
+                    Simula um aumento real na capacidade física de recebimento do Centro de Distribuição GPA (CD) selecionado.
+                  </p>
+                </div>
+
+                {/* Agendas G.A Slider (0% to 100%) */}
+                <div className="lg:col-span-4 space-y-3 bg-white/45 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 font-mono">Agenda de Sistema GA</span>
+                    <span className="text-xs font-black text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded font-mono">+{simulatedAgendasPercent}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={simulatedAgendasPercent}
+                    onChange={(e) => setSimulatedAgendasPercent(parseInt(e.target.value, 10))}
+                    className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none"
+                  />
+                  <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400">
+                    <span>0% (Padrão)</span>
+                    <span>+50%</span>
+                    <span>+100%</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed font-mono">
+                    Simula um aumento correspondente no volume de agendamentos gerenciados diretamente pela agenda interna do sistema G.A.
+                  </p>
+                </div>
+
+                {/* Live Prediction Outcome Box */}
+                <div className="lg:col-span-4 bg-gradient-to-br from-slate-900/90 to-slate-950 text-white p-4 rounded-2xl border border-slate-800/80 flex flex-col justify-between h-full min-h-[145px]">
+                  <div>
+                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block font-mono">Diagnóstico de Simulação</span>
+                    <div className="mt-2 text-xs leading-relaxed font-bold">
+                      {stats.totalExcessoVolume === 0 ? (
+                        <div className="text-emerald-400 flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>
+                            🟢 <strong>Totalmente Mitigado:</strong> O acréscimo de <strong>+{simulatedCapacityPercent}%</strong> elimina 100% das sobrecargas e gargalos do período útil!
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-amber-400 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>
+                            🟡 <strong>Gargalo Parcial:</strong> Sobrecarga residual de <strong>{stats.totalExcessoVolume}%</strong>. Incremente a capacidade para zerar a anomalia.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <span>Dias na Meta: <strong>{stats.pctDiasNaMeta}%</strong></span>
+                    <span>No-Show Estimado: <strong>{stats.noShowPct}%</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading ? (
         <div className="w-full h-80 flex flex-col items-center justify-center bg-white/40 dark:bg-slate-900/10 border border-slate-200/40 rounded-3xl p-12">
@@ -1153,8 +1436,8 @@ export default function Dashboard2({ theme, showNotification, user }: Dashboard2
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs font-medium">
                     {filteredData.map((item, idx) => {
                       const isWeekend = isWeekendDay(item.data);
-                      const cap = item.capacidade;
-                      const isOver = item.agendamentoECapacidade;
+                      const cap = Math.round(item.capacidade * (1 + simulatedCapacityPercent / 100));
+                      const isOver = item.agendado > cap;
                       const desvio = item.agendado - cap;
                       const desvioPct = cap > 0 ? Math.round((desvio / cap) * 100) : 100;
 

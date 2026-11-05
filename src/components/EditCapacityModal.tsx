@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { X, Save, ShieldAlert, Calendar, AlertCircle } from "lucide-react";
-import { Capacidade } from "../types";
 
 interface EditCapacityModalProps {
   isOpen: boolean;
@@ -14,15 +13,11 @@ interface EditCapacityModalProps {
     recebimentoRemunerado?: number | null;
     cd?: number;
     categoria?: string;
+    raw?: any;
   }) => void;
   editMode: "inbound" | "outbound";
-  targetDay?: { 
-    id: number; 
-    dateStr: string; 
-    capacidadeInbound: number | null; 
-    recebimentoRemunerado?: number | null;
-  };
-  targetMonth?: { monthKey: string; monthName: string; capacidadeOutboundFracionado: number; capacidadeOutboundFechado: number; cd: number; categoria: string };
+  targetDay?: any;
+  targetMonth?: any;
 }
 
 export default function EditCapacityModal({
@@ -40,9 +35,14 @@ export default function EditCapacityModal({
   const [valRemunerado, setValRemunerado] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ✅ LOG DE DEBUG
+  console.log('📦 EditCapacityModal renderizado:', { isOpen, editMode, targetDay, targetMonth });
+
   useEffect(() => {
+    console.log('🔄 Atualizando campos do modal...', { editMode, targetDay, targetMonth });
+    
     if (editMode === "inbound" && targetDay) {
-      setValInbound(targetDay.capacidadeInbound !== null ? String(targetDay.capacidadeInbound) : "");
+      setValInbound(targetDay.capacidadeInbound !== null && targetDay.capacidadeInbound !== undefined ? String(targetDay.capacidadeInbound) : "");
       const rem = targetDay.recebimentoRemunerado;
       if (rem !== undefined && rem !== null && rem > 0) {
         setHasRemunerado(true);
@@ -51,13 +51,52 @@ export default function EditCapacityModal({
         setHasRemunerado(false);
         setValRemunerado("");
       }
-    } else if (editMode === "outbound" && targetMonth) {
-      setValFracionado(targetMonth.capacidadeOutboundFracionado !== null ? String(targetMonth.capacidadeOutboundFracionado) : "");
-      setValFechado(targetMonth.capacidadeOutboundFechado !== null ? String(targetMonth.capacidadeOutboundFechado) : "");
+    } else if (editMode === "outbound") {
+      // ✅ Usa targetMonth se disponível, senão usa targetDay
+      const data = targetMonth || targetDay;
+      if (data) {
+        setValFracionado(data.capacidadeOutboundFracionado !== null && data.capacidadeOutboundFracionado !== undefined ? String(data.capacidadeOutboundFracionado) : "");
+        setValFechado(data.capacidadeOutboundFechado !== null && data.capacidadeOutboundFechado !== undefined ? String(data.capacidadeOutboundFechado) : "");
+        console.log('📊 Outbound carregado:', { 
+          fracionado: data.capacidadeOutboundFracionado, 
+          fechado: data.capacidadeOutboundFechado 
+        });
+      }
     }
   }, [editMode, targetDay, targetMonth, isOpen]);
 
-  if (!isOpen) return null;
+  // ✅ Se não estiver aberto, NÃO RENDERIZA
+  if (!isOpen) {
+    console.log('🔴 Modal fechado (isOpen = false)');
+    return null;
+  }
+
+  // ✅ Verifica se há dados para editar
+  if (editMode === "inbound" && !targetDay) {
+    console.warn('⚠️ Modal Inbound aberto sem targetDay');
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden p-6">
+          <h3 className="text-lg font-bold text-red-600">Erro: Dados não carregados</h3>
+          <p className="text-sm text-slate-600 mt-2">Não foi possível carregar os dados para edição.</p>
+          <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-200 rounded-lg">Fechar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (editMode === "outbound" && !targetDay && !targetMonth) {
+    console.warn('⚠️ Modal Outbound aberto sem dados');
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden p-6">
+          <h3 className="text-lg font-bold text-red-600">Erro: Dados não carregados</h3>
+          <p className="text-sm text-slate-600 mt-2">Não foi possível carregar os dados para edição.</p>
+          <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-200 rounded-lg">Fechar</button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,15 +108,20 @@ export default function EditCapacityModal({
           id: targetDay.id,
           capacidadeInbound: valInbound === "" ? null : Number(valInbound),
           recebimentoRemunerado: hasRemunerado && valRemunerado !== "" ? Number(valRemunerado) : null,
+          raw: targetDay.raw,
         });
-      } else if (editMode === "outbound" && targetMonth) {
-        onSave({
-          monthKey: targetMonth.monthKey,
-          capacidadeOutboundFracionado: valFracionado === "" ? null : Number(valFracionado),
-          capacidadeOutboundFechado: valFechado === "" ? null : Number(valFechado),
-          cd: targetMonth.cd,
-          categoria: targetMonth.categoria,
-        });
+      } else if (editMode === "outbound") {
+        const data = targetMonth || targetDay;
+        if (data) {
+          onSave({
+            id: data.id || targetDay?.id,
+            capacidadeOutboundFracionado: valFracionado === "" ? null : Number(valFracionado),
+            capacidadeOutboundFechado: valFechado === "" ? null : Number(valFechado),
+            cd: data.cd || targetDay?.raw?.cd,
+            categoria: data.categoria || targetDay?.raw?.categoria,
+            raw: targetDay?.raw || data.raw,
+          });
+        }
       }
       setIsSubmitting(false);
       onClose();
@@ -99,7 +143,7 @@ export default function EditCapacityModal({
                 Editar Capacidade
               </h3>
               <p className="text-[11px] text-slate-500">
-                Ação restrita de nível administrador (anderson)
+                {editMode === "inbound" ? "Edição diária" : "Edição mensal (impacta todos os dias)"}
               </p>
             </div>
           </div>
@@ -124,12 +168,15 @@ export default function EditCapacityModal({
             </div>
           )}
 
-          {editMode === "outbound" && targetMonth && (
+          {editMode === "outbound" && (targetMonth || targetDay) && (
             <div className="bg-indigo-50/60 border border-indigo-100 p-3.5 rounded-xl flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
               <div className="text-xs">
                 <p className="text-slate-500">Tipo de Fluxo: <strong className="text-indigo-600">Outbound (Edição Mensal)</strong></p>
-                <p className="text-slate-700 mt-0.5">Mês selecionado: <strong>{targetMonth.monthName}</strong></p>
+                <p className="text-slate-700 mt-0.5">
+                  Mês: <strong>{targetMonth?.monthName || targetDay?.monthName || "Mês selecionado"}</strong>
+                </p>
+                <p className="text-slate-500 text-[10px] mt-0.5">⚠️ Esta alteração afeta TODOS os dias do mês</p>
               </div>
             </div>
           )}
@@ -189,7 +236,7 @@ export default function EditCapacityModal({
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 block">
-                  Capacidade Outbound Fracionado
+                  Capacidade Outbound Fracionado (Total do Mês)
                 </label>
                 <input
                   type="number"
@@ -201,7 +248,7 @@ export default function EditCapacityModal({
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 block">
-                  Capacidade Outbound Fechado
+                  Capacidade Outbound Fechado (Total do Mês)
                 </label>
                 <input
                   type="number"
@@ -211,9 +258,9 @@ export default function EditCapacityModal({
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 text-sm font-mono transition-all"
                 />
               </div>
-              <div className="text-[10px] text-slate-500 leading-normal flex gap-1.5 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-slate-400 mt-0.5" />
-                <span>Alterar este valor mensal atualizará em cascata todos os dias cadastrados para este mês.</span>
+              <div className="text-[10px] text-slate-500 leading-normal flex gap-1.5 p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5" />
+                <span>⚠️ Alterar este valor mensal atualizará em cascata <strong>TODOS</strong> os dias cadastrados para este mês.</span>
               </div>
             </div>
           )}

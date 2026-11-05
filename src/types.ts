@@ -58,3 +58,138 @@ export interface MonthRow {
   cd: number;
   categoria: string;
 }
+
+export interface HistoricoEstoque {
+  data: string; // YYYY-MM-DD
+  origem: "REAL" | string;
+  qtdPosicoes: number;
+  qtdOcupada: number;
+  percentualOcupacao: number;
+}
+
+export interface ProjecaoEstoque {
+  data: string; // YYYY-MM-DD
+  origem: "PROJETADO" | string;
+  qtdPosicoes: number;
+  qtdOcupada: number;
+  percentualOcupacao: number;
+}
+
+export interface PainelEstoqueSubCategoria {
+  cd: number;
+  categoria: string;
+  subCategoria: string;
+  historico: HistoricoEstoque[];
+  projecao: ProjecaoEstoque[];
+}
+
+// ============================================
+// PAINEL GERENCIAL - STATUS DIÁRIO DA OPERAÇÃO
+// ============================================
+
+export interface CategoriaAlerta {
+  nome: string;
+  percentual: number;
+  livres?: number;
+  senhas?: number;
+}
+
+export interface FornecedorBacklog {
+  nome: string;
+  senhasAtrasadas: number;
+}
+
+export interface RotaBacklogOutbound {
+  nome: string;
+  pedidos: number;
+  cargas?: number;
+}
+
+export interface StatusCdGerencial {
+  cd: number; // 1965, 1942, 930, 7801
+  nome: string;
+  regiao?: string;
+  statusGeral: "NORMAL" | "ATENÇÃO" | "CRÍTICO";
+  ocupacao: {
+    percentual: number;
+    total: number;
+    ocupada: number;
+    livre: number;
+    bloqueada: number;
+    alertaCategorias: CategoriaAlerta[];
+  };
+  agendas: {
+    percentual: number;
+    previstas: number;
+    capacidade: number;
+    alertaCategorias: CategoriaAlerta[];
+  };
+  backlogRecebimento: {
+    senhasAtraso: number;
+    diffDiaAnterior: number;
+    topFornecedores: FornecedorBacklog[];
+  };
+  backlogFaturamento: {
+    percentual: number;
+    capacidade: number;
+    backlogPrevisto14h: number;
+  };
+  // Retrocompatibilidade se necessário
+  backlogInbound?: {
+    senhasAtraso: number;
+    diffDiaAnterior: number;
+    topFornecedores: FornecedorBacklog[];
+  };
+  backlogOutbound?: {
+    pedidosRetidos: number;
+    diffDiaAnterior: number;
+    cargasRetidas: number;
+    janelasExpiradas: number;
+    topRotas: RotaBacklogOutbound[];
+  };
+}
+
+export interface PainelGerencialData {
+  dataReferencia: string;
+  distribuicao: string;
+  cds: StatusCdGerencial[];
+}
+
+export interface ApiResumoSubCategoria {
+  categoria: string;
+  subCategoria: string;
+  percentualOcupacao: number;
+  qtdLivre: number;
+}
+
+export interface ApiResumoItem {
+  cd: number;
+  dataOcupacao: string;
+  status: string;
+  qtdCapacidade: number;
+  qtdOcupada: number;
+  qtdLivre: number;
+  qtdBloqueada: number;
+  percentualOcupacao: number;
+  subCategoriasAcimaLimite: ApiResumoSubCategoria[];
+  agendas?: any;
+  backlogRecebimento?: any;
+  backlogFaturamento?: any;
+}
+
+// ============================================
+// MANHATTAN CAPACIDADES - GRADE HORÁRIA INBOUND
+// ============================================
+
+export interface ManhattanHorarioRow {
+  horario: string; // "00:00-01:00", etc.
+  domingo: number;
+  segunda: number;
+  terca: number;
+  quarta: number;
+  quinta: number;
+  sexta: number;
+  sabado: number;
+  totalHorario?: number;
+}
+
