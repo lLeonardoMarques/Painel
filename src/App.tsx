@@ -12,6 +12,7 @@ import PainelRegionais from "./components/PainelRegionais";
 import AlertaCategorias from "./components/AlertasCategorias";
 import ManhattanCapacidades from "./components/ManhattanCapacidades";
 import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
+import PainelPFA from "./components/pfa/PainelPFA";
 
 // ============================================
 // 🔥 CONSTANTES DE CONFIGURAÇÃO
@@ -484,6 +485,15 @@ export default function App() {
             showNotification={showNotification}
             onPageChange={setCurrentPage}
           />
+        )}
+
+        {currentPage.startsWith("pfa-") && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <PainelPFA
+              processo={currentPage.slice("pfa-".length)}
+              onProcessoChange={(processo: string) => setCurrentPage(`pfa-${processo}`)}
+            />
+          </div>
         )}
 
         {currentPage === "user-control" && user?.role === "admin" && (

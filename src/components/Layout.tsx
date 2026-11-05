@@ -21,6 +21,11 @@ import {
   AlertCircle,
   Layers3,
   CalendarRange,
+  Boxes,
+  PackageOpen,
+  Ship,
+  Truck,
+  ArrowLeftRight,
 } from "lucide-react";
 import DashboardOcupacao from "./DashboardOcupacao";
 
@@ -56,11 +61,20 @@ const ANALYTICS_NAV: NavItem[] = [
   { id: "projecao-cd", label: "Projeção de Ocupação", icon: CalendarRange },
 ];
 
+// PFA (planejamento de final de ano): cada item abre o painel PFA no processo correspondente
+const PFA_NAV: NavItem[] = [
+  { id: "pfa-recebimento", label: "Recebimento", icon: PackageOpen },
+  { id: "pfa-importacao", label: "Importação", icon: Ship },
+  { id: "pfa-expedicao", label: "Expedição", icon: Truck },
+  { id: "pfa-transferencia", label: "Transferência", icon: ArrowLeftRight },
+];
+
 const OTHER_NAV: NavItem[] = [
   { id: "alerta-categorias", label: "Alertas de Categorias", icon: AlertTriangle },
 ];
 
 const ANALYTICS_PAGES = new Set(["dashboard", "painel-gerencial", "painel-regionais", "projecao-cd"]);
+const PFA_PAGES = new Set(PFA_NAV.map((item) => item.id));
 
 function readStored(key: string, fallback: string): string {
   try {
@@ -86,6 +100,7 @@ export default function Layout({
   );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
+  const [pfaOpen, setPfaOpen] = useState(() => PFA_PAGES.has(currentPage));
 
   useEffect(() => {
     try {
@@ -97,6 +112,7 @@ export default function Layout({
 
   useEffect(() => {
     if (ANALYTICS_PAGES.has(currentPage)) setAnalyticsOpen(true);
+    if (PFA_PAGES.has(currentPage)) setPfaOpen(true);
   }, [currentPage]);
 
   useEffect(() => {
@@ -105,6 +121,7 @@ export default function Layout({
 
   const dark = theme === "dark";
   const analyticsActive = ANALYTICS_PAGES.has(currentPage);
+  const pfaActive = PFA_PAGES.has(currentPage);
   const isError = !!notification && /❌|erro|error/i.test(notification);
   const cleanedNotification = notification?.replace(/[❌⚠️🔍📊📍📅🧹🎯⚡✅]/g, "").trim();
   const showNotification = !!notification && /❌|⚠️|erro|error|alerta/i.test(notification);
@@ -153,6 +170,65 @@ export default function Layout({
       </button>
     );
   };
+
+  /** Grupo recolhível do menu (ex.: Analítico, PFA): no menu compacto, clicar expande o menu e abre o grupo. */
+  const renderGroup = (
+    label: string,
+    Icon: React.ComponentType<{ className?: string }>,
+    items: NavItem[],
+    open: boolean,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    active: boolean,
+    compact: boolean,
+    mobile: boolean
+  ) => (
+    <>
+      <button
+        type="button"
+        title={compact ? label : undefined}
+        aria-expanded={open}
+        onClick={() => {
+          if (compact && !mobile) {
+            setCollapsed(false);
+            setOpen(true);
+          } else {
+            setOpen((v) => !v);
+          }
+        }}
+        className={itemClass(active, compact)}
+      >
+        <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-blue-600 dark:text-blue-400" : ""}`} />
+        {!compact && (
+          <>
+            <span className="flex-1 text-[13px] font-medium">{label}</span>
+            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </>
+        )}
+      </button>
+
+      {!compact && (
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="overflow-hidden"
+            >
+              <div
+                className={`ml-[20px] mt-1 space-y-1 border-l pl-3 ${
+                  dark ? "border-slate-700" : "border-slate-200"
+                }`}
+              >
+                {items.map((item) => renderLink(item))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+    </>
+  );
 
   const renderSidebar = (compact: boolean, mobile = false) => (
     <>
@@ -225,52 +301,10 @@ export default function Layout({
                 Análise e monitoramento
               </p>
             )}
-            <button
-              type="button"
-              title={compact ? "Analítico" : undefined}
-              aria-expanded={analyticsOpen}
-              onClick={() => {
-                if (compact && !mobile) {
-                  setCollapsed(false);
-                  setAnalyticsOpen(true);
-                } else {
-                  setAnalyticsOpen((v) => !v);
-                }
-              }}
-              className={itemClass(analyticsActive, compact)}
-            >
-              <Activity
-                className={`h-[17px] w-[17px] shrink-0 ${analyticsActive ? "text-blue-600 dark:text-blue-400" : ""}`}
-              />
-              {!compact && (
-                <>
-                  <span className="flex-1 text-[13px] font-medium">Analítico</span>
-                  {analyticsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </>
-              )}
-            </button>
-
-            {!compact && (
-              <AnimatePresence initial={false}>
-                {analyticsOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="overflow-hidden"
-                  >
-                    <div
-                      className={`ml-[20px] mt-1 space-y-1 border-l pl-3 ${
-                        dark ? "border-slate-700" : "border-slate-200"
-                      }`}
-                    >
-                      {ANALYTICS_NAV.map((item) => renderLink(item))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            )}
+            {renderGroup("Analítico", Activity, ANALYTICS_NAV, analyticsOpen, setAnalyticsOpen, analyticsActive, compact, mobile)}
+            <div className="mt-1">
+              {renderGroup("PFA", Boxes, PFA_NAV, pfaOpen, setPfaOpen, pfaActive, compact, mobile)}
+            </div>
             <div className="mt-1 space-y-1">{OTHER_NAV.map((item) => renderLink(item, compact))}</div>
           </div>
         )}
@@ -386,7 +420,7 @@ export default function Layout({
 
         <main
           className={`flex min-h-0 w-full flex-1 flex-col ${
-            currentPage === "dashboard" || currentPage === "painel-gerencial" || currentPage === "painel-regionais"
+            currentPage === "dashboard" || currentPage === "painel-gerencial" || currentPage === "painel-regionais" || pfaActive
               ? "overflow-hidden"
               : "overflow-y-auto overflow-x-hidden"
           }`}

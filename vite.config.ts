@@ -67,8 +67,9 @@ export default defineConfig(() => {
           changeOrigin: true,
           secure: false,
         },
+        // ocupação por CD: backend único gestao-ppcp
         '/api/resumo': {
-          target: 'http://10.210.1.242:8090',
+          target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
         },

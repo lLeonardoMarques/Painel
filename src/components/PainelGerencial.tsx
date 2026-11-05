@@ -47,7 +47,7 @@ interface PainelGerencialProps {
 const TOOLBAR_KEY = "painel_gerencial_show_toolbar";
 
 // ============================================================
-// DADOS DE CONTINGÊNCIA / FALLBACK DA API http://10.210.1.242:8090/api/resumo
+// DADOS DE CONTINGÊNCIA / FALLBACK DA API http://10.210.1.242:8080/api/resumo
 // ============================================================
 const INITIAL_API_RESUMO_DATA: ApiResumoItem[] = [
   {
@@ -544,7 +544,7 @@ export default function PainelGerencial({
       const override = customOverrides[cd.cd];
       if (override) {
         // 🔥 CRÍTICO: O Primeiro Quadrante de Informações (Ocupação CD: total, ocupada, livre, bloqueada, percentual, subcategorias)
-        // é sincronizado pela API externa (http://10.210.1.242:8090/api/resumo).
+        // é sincronizado pela API externa (http://10.210.1.242:8080/api/resumo).
         // As edições manuais são aplicadas aos quadrantes operacionais e ao Status Geral (conforme solicitado pelo usuário).
         return {
           ...cd,
@@ -622,7 +622,7 @@ export default function PainelGerencial({
   const [currentTime, setCurrentTime] = useState<string>(() => getFormattedDateTime().time);
   const [lastUpdated, setLastUpdated] = useState<string>(() => getFormattedDateTime().full);
 
-  // Função para buscar dados da API http://10.210.1.242:8090/api/resumo
+  // Função para buscar dados da API http://10.210.1.242:8080/api/resumo
   const fetchResumoData = useCallback(async (notifyOnSuccess: boolean = false) => {
     setIsRefreshing(true);
     let success = false;
@@ -655,10 +655,10 @@ export default function PainelGerencial({
       console.warn("Proxy /api/resumo falhou ou timeout:", err);
     }
 
-    // 2. Fallback direto se estiver na intranet corporativa (tentativa direta)
+    // 2. Fallback direto no backend gestao-ppcp (porta 8080), caso o proxy /api/resumo falhe
     if (!success && typeof window !== "undefined") {
       try {
-        const directRes = await fetch("http://10.210.1.242:8090/api/resumo", {
+        const directRes = await fetch("http://10.210.1.242:8080/api/resumo", {
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
@@ -685,7 +685,7 @@ export default function PainelGerencial({
 
     if (success) {
       if (notifyOnSuccess && showNotification) {
-        showNotification("✅ 1º Quadrante (Ocupação CD) sincronizado via API externa http://10.210.1.242:8090/api/resumo!");
+        showNotification("✅ 1º Quadrante (Ocupação CD) sincronizado via API externa http://10.210.1.242:8080/api/resumo!");
       }
     } else {
       const { date, time, full } = getFormattedDateTime("2026-10-14");
@@ -693,7 +693,7 @@ export default function PainelGerencial({
       setCurrentTime(time);
       setLastUpdated(full);
       if (notifyOnSuccess && showNotification) {
-        showNotification("ℹ️ 1º Quadrante atualizado com a base de contingência da API 10.210.1.242:8090");
+        showNotification("ℹ️ 1º Quadrante atualizado com a base de contingência da API 10.210.1.242:8080");
       }
     }
   }, [showNotification]);
@@ -740,14 +740,14 @@ export default function PainelGerencial({
     return isRegionais
       ? `📊 *STATUS DIÁRIO DA OPERAÇÃO — REGIONAIS FORA DE SP (CDs 409, 1974, 1979, 1984, 1953)*
 🕒 ${currentDate} às ${currentTime} | Supply Chain / Regionais Fora de SP
-Fonte: API Corporativa http://10.210.1.242:8090/api/resumo
+Fonte: API Corporativa http://10.210.1.242:8080/api/resumo
 
 ${cdLines}
 
 📎 _Acompanha imagem do Painel Gerencial para colar no e-mail._`
       : `📊 *STATUS DIÁRIO DA OPERAÇÃO — SÃO PAULO (CDs 1965, 1942, 930, 7801)*
 🕒 ${currentDate} às ${currentTime} | ${data.distribuicao}
-Fonte: API Corporativa http://10.210.1.242:8090/api/resumo
+Fonte: API Corporativa http://10.210.1.242:8080/api/resumo
 
 ${cdLines}
 
@@ -1496,21 +1496,21 @@ ${cdLines}
               <span className="text-slate-400">·</span>
               <span className="text-slate-500 font-normal">{lastUpdated}</span>
 
-              {/* Badge de status da API http://10.210.1.242:8090/api/resumo */}
+              {/* Badge de status da API http://10.210.1.242:8080/api/resumo */}
               <span
                 className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
                   apiStatusSource === "LIVE"
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                     : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
                 }`}
-                title="Conectado ao endpoint http://10.210.1.242:8090/api/resumo"
+                title="Conectado ao endpoint http://10.210.1.242:8080/api/resumo"
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     apiStatusSource === "LIVE" ? "bg-emerald-500 animate-pulse" : "bg-blue-500"
                   }`}
                 />
-                {apiStatusSource === "LIVE" ? "API 10.210.1.242:8090 Conectada" : "API 10.210.1.242:8090 (Sincronizada)"}
+                {apiStatusSource === "LIVE" ? "API 10.210.1.242:8080 Conectada" : "API 10.210.1.242:8080 (Sincronizada)"}
               </span>
             </div>
 
@@ -1587,7 +1587,7 @@ ${cdLines}
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                title="Atualizar dados da API http://10.210.1.242:8090/api/resumo"
+                title="Atualizar dados da API http://10.210.1.242:8080/api/resumo"
                 className="exec-btn"
               >
                 <RefreshCw
@@ -2055,7 +2055,7 @@ ${cdLines}
           <div className="footer">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Fonte: API Corporativa (http://10.210.1.242:8090/api/resumo) · {currentDate} às {currentTime}
+              Fonte: API Corporativa (http://10.210.1.242:8080/api/resumo) · {currentDate} às {currentTime}
             </span>
             <span>GPA Logistics · Status Operação Centros de Distribuição</span>
           </div>
@@ -2446,7 +2446,7 @@ ${cdLines}
                           >
                             <span>📦 1º Quadrante: Ocupação CD</span>
                             <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                              API Externa: 10.210.1.242:8090
+                              API Externa: 10.210.1.242:8080
                             </span>
                           </h4>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">

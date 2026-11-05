@@ -1,10 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import {
-  RotateCcw,
-  Save,
-  Info,
-  X,
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Lock, RotateCcw, Save, Trash2, Plus, X } from "lucide-react";
+import { apiFetch } from "../services/api";
+
+// ---------------------------------------------------------------------------
+// Projeção de Ocupação do CD (S&OP) — API /api/sop do backend gestao-ppcp.
+// Regras (definidas pelo planejamento):
+//  · dia com foto de ocupação = realizado: a tabela mostra só o real; o gráfico mostra real e projetado;
+//  · hoje mostra a projeção (o realizado de hoje é lançado amanhã, no painel "Lançar realizado");
+//  · nada que já aconteceu pode ser alterado: planejado só de amanhã em diante, realizado uma única vez;
+//  · na simulação a tabela é só leitura; a simulação é ajustada pelos parâmetros, variações e posições.
+// ---------------------------------------------------------------------------
 
 interface ProjecaoOcupacaoCDProps {
   theme?: "light" | "dark";
@@ -12,1528 +17,1131 @@ interface ProjecaoOcupacaoCDProps {
   onPageChange?: (page: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constantes e Parâmetros (Idênticos ao modelo de inteligência do anexo)
-// ---------------------------------------------------------------------------
-const HOJE = new Date(2026, 9, 30); // 30 de Outubro de 2026
-const FATOR_CX_PALLET = 40;
-const PALLET_POR_VEICULO = 26;
-const CDS = ["CD 01", "CD 02", "CD 03"] as const;
-const CATS: Record<string, number> = {
-  Mercearia: 14000,
-  Bebidas: 9000,
-  Perecíveis: 4500,
-  Bazar: 6000,
-  "Higiene e Limpeza": 7000,
-};
-const CD_MULT: Record<string, number> = {
-  "CD 01": 1.0,
-  "CD 02": 0.8,
-  "CD 03": 0.6,
-};
-const RANGE_INI = new Date(2026, 7, 1);
-const RANGE_FIM = new Date(2026, 11, 31);
-const MESES = [
-  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
-];
+type Tipo = "REALIZADO" | "PROJETADO" | "SEM_DADOS";
+
+interface FluxoDia {
+  fluxo: string;
+  nome: string;
+  demandaInbound: number | null;
+  remunerada: number | null;
+  backlog: number | null;
+  palletsIn: number | null;
+  demandaFracionada: number | null;
+  demandaFechada: number | null;
+  palletsOut: number | null;
+  ajustados: string[];
+}
+
+interface Dia {
+  data: string;
+  tipo: Tipo;
+  veiculos: number | null;
+  demandaInbound: number | null;
+  remunerada: number | null;
+  backlog: number | null;
+  palletsIn: number | null;
+  caixasFracionadas: number | null;
+  caixasFechadas: number | null;
+  palletsOut: number | null;
+  capacidade: number | null;
+  bloqueado: number | null;
+  ocupacao: number | null;
+  ocupacaoReal: number | null;
+  ocupacaoProjetada: number | null;
+  percentual: number | null;
+  percentualReal: number | null;
+  percentualProjetado: number | null;
+  realizadoLancado: boolean;
+  fluxos: FluxoDia[];
+  planejado: {
+    veiculos: number | null;
+    palletsIn: number | null;
+    caixasFracionadas: number | null;
+    caixasFechadas: number | null;
+  } | null;
+  realizado: { veiculos: number | null; pallets: number | null; caixasFracionadas: number | null; caixasFechadas: number | null } | null;
+}
+
+interface Resumo {
+  capacidade: number | null;
+  bloqueado: number | null;
+  ocupacaoAtual: number | null;
+  dataOcupacaoAtual: string | null;
+  percentualAtual: number | null;
+  ocupacaoFinal: number | null;
+  dataFinal: string | null;
+  percentualFinal: number | null;
+  picoProjetado: { data: string; percentual: number } | null;
+}
+
+interface Projecao {
+  categoria: string;
+  nomeCategoria: string;
+  hoje: string;
+  ultimaDataRealizada: string | null;
+  resumo: Resumo;
+  dias: Dia[];
+  avisos: string[];
+}
+
+interface Comparativo {
+  resumo: {
+    ocupacaoFinalBase: number | null;
+    ocupacaoFinalSimulada: number | null;
+    percentualFinalBase: number | null;
+    percentualFinalSimulado: number | null;
+    picoBase: { percentual: number } | null;
+    picoSimulado: { percentual: number } | null;
+    diasCriticosBase: number;
+    diasCriticosSimulado: number;
+  };
+  base: Projecao;
+  simulada: Projecao;
+}
+
+interface Categoria {
+  codigo: string;
+  nome: string;
+  fluxos: { codigo: string; nome: string }[];
+}
+
+interface ParametroFluxo {
+  fluxo: string;
+  nome: string;
+  percentualRecebimento: number;
+  palletsPorVeiculo: number;
+  percentualExpedicao: number;
+  caixasPalletFracionado: number;
+  caixasPalletFechado: number;
+}
+
+interface SimulacaoResumo {
+  id: number;
+  nome: string;
+}
+
+interface Variacao {
+  campo: string;
+  inicio: string;
+  fim: string;
+  percentual: number;
+}
+
+interface Extra {
+  categoria: string;
+  aPartirDe: string;
+  posicoes: number;
+}
+
+interface SimulacaoDetalhe {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  definicao: {
+    parametrosGerais?: unknown;
+    parametrosFluxo?: Record<string, Record<string, number | null>>;
+    ajustesFluxo?: unknown[];
+    ajustesCapacidade?: unknown[];
+    variacoes?: Variacao[];
+    capacidadeExtra?: Extra[];
+  };
+}
+
+type Pendente = Record<string, number | null | string>;
+
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const WD = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-const STORAGE_KEY = "proj-ocup-cd-ajustes-v2";
-const EDIT_FIELDS = ["receb", "fat", "fechado"] as const;
+const CAMPO_FLUXO: Record<string, string> = {
+  veic: "demandaInbound",
+  remun: "remunerada",
+  backlog: "backlog",
+  frac: "demandaFracionada",
+  fech: "demandaFechada",
+};
+const CAMPOS_REAL = ["veiculos", "pallets", "caixasFracionadas", "caixasFechadas"] as const;
+const PAR_CAMPOS = ["percentualRecebimento", "palletsPorVeiculo", "percentualExpedicao", "caixasPalletFracionado", "caixasPalletFechado"] as const;
+const PCT_CAMPOS = new Set<string>(["percentualRecebimento", "percentualExpedicao"]);
 
-const iso = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const COLS: { k: string; t: string; ed?: boolean }[] = [
+  { k: "veic", t: "Veículos (agenda / real)", ed: true },
+  { k: "remun", t: "Remunerado (veíc.)", ed: true },
+  { k: "backlog", t: "Backlog (veíc.)", ed: true },
+  { k: "pin", t: "Pallets recebidos" },
+  { k: "frac", t: "Caixas fracionadas", ed: true },
+  { k: "fech", t: "Caixas fechadas", ed: true },
+  { k: "pout", t: "Pallets expedidos" },
+  { k: "cap", t: "Capacidade útil" },
+  { k: "bloq", t: "Bloqueado" },
+  { k: "real", t: "Qtd ocupada real" },
+  { k: "proj", t: "Qtd ocupada projetada" },
+  { k: "pct", t: "% ocupação" },
+];
 
-const addD = (d: Date, n: number) =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parse = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const addD = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const dm = (s?: string | null) => (s ? `${s.slice(8)}/${s.slice(5, 7)}` : "—");
+const nf = (n: number | null | undefined) => (n == null || isNaN(n) ? "—" : Math.round(n).toLocaleString("pt-BR"));
+const pf = (n: number | null | undefined) =>
+  n == null || isNaN(n) ? "—" : `${(n * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+const num = (v: string): number | null => (v.trim() === "" ? null : Math.max(0, Number(v.replace(",", "."))));
+const corPct = (p: number | null | undefined) => (p == null ? "#94a3b8" : p >= 0.95 ? "#dc2626" : p >= 0.9 ? "#d97706" : "#16a34a");
 
-const nf = (n: number | null | undefined): string =>
-  n == null || isNaN(n) ? "—" : Math.round(n).toLocaleString("pt-BR");
-
-const pf = (n: number | null | undefined): string =>
-  n == null || isNaN(n)
-    ? "—"
-    : (n * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
-
-const HOJE_ISO = iso(HOJE);
-
-// Gerador pseudo-aleatório determinístico idêntico ao anexo
-function rng(str: string) {
-  let h = 1779033703 ^ str.length;
-  for (let i = 0; i < str.length; i++) {
-    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return function () {
-    h += 0x6d2b79f5;
-    let t = h;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-interface BaseDia {
-  iso: string;
-  receb: number;
-  fat: number;
-  fechado: number;
-  bloq: number;
-  real: number | null;
-}
-
-interface BaseItem {
-  cap: number;
-  occ0: number;
-  dias: BaseDia[];
-}
-
-// Inicializa a BASE com exata fidelidade algorítmica ao anexo HTML
-const BASE: Record<string, BaseItem> = {};
-for (const cd of CDS) {
-  for (const cat in CATS) {
-    const r = rng(`${cd}|${cat}`);
-    const cap = Math.round((CATS[cat] * CD_MULT[cd]) / 10) * 10;
-    let occ = cap * (0.8 + r() * 0.08);
-    const occ0 = occ;
-    const dias: BaseDia[] = [];
-    for (let d = new Date(RANGE_INI); d <= RANGE_FIM; d = addD(d, 1)) {
-      const wd = d.getDay();
-      const peso = wd === 0 ? 0.25 : wd === 6 ? 0.6 : 1.0;
-      const palR = cap * 0.065 * peso * (0.85 + r() * 0.3);
-      const drift = occ / cap > 0.9 ? 1.08 : occ / cap < 0.78 ? 0.92 : 1.0;
-      const palF = cap * 0.065 * peso * (0.85 + r() * 0.3) * drift;
-      const totalFatCx = Math.round(palF * FATOR_CX_PALLET);
-      const fatFrac = Math.round(totalFatCx * 0.6);
-      const fatFech = totalFatCx - fatFrac;
-      const k = iso(d);
-      const passado = k < HOJE_ISO;
-      const realOcc = occ + palR * (0.95 + r() * 0.1) - palF * (0.95 + r() * 0.1);
-      dias.push({
-        iso: k,
-        receb: Math.max(0, Math.round(palR / PALLET_POR_VEICULO)),
-        fat: fatFrac,
-        fechado: fatFech,
-        bloq: Math.round(cap * (0.015 + r() * 0.02)),
-        real: passado ? Math.round(realOcc) : null,
-      });
-      if (passado) occ = realOcc;
-      else occ = occ + palR - palF;
+async function chamar<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await apiFetch(`/api/sop${path}`, init);
+  if (r.status === 403) throw new Error("Sem permissão: faça login para salvar.");
+  if (!r.ok) {
+    let msg = `${r.status} ${r.statusText}`;
+    try {
+      const j = await r.json();
+      msg = j.detail || j.title || msg;
+    } catch {
+      /* corpo vazio */
     }
-    BASE[`${cd}|${cat}`] = { cap, occ0: Math.round(occ0), dias };
+    throw new Error(msg);
   }
+  return (r.status === 204 ? null : await r.json()) as T;
 }
 
-interface DayAggregate {
-  iso: string;
-  receb: number;
-  palRec: number;
-  fat: number;
-  fechado: number;
-  palFat: number;
-  bloq: number;
-  real: number | null;
-  temReal: boolean;
-  proj: number;
-  pctProj: number;
-  pctReal: number | null;
-  mod: { receb?: boolean; fat?: boolean; fechado?: boolean };
-}
-
-export default function ProjecaoOcupacaoCD({
-  theme = "dark",
-  showNotification,
-}: ProjecaoOcupacaoCDProps) {
+export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }: ProjecaoOcupacaoCDProps) {
   const isDark = theme === "dark";
+  const hojeLocal = iso(new Date());
 
-  // Estados com exatos rótulos e valores default do anexo
   const [visao, setVisao] = useState<"semana" | "mes">("semana");
-  const [mes, setMes] = useState<number>(HOJE.getMonth()); // Outubro = 9
-  const [cd, setCd] = useState<string>("CD 01");
-  const [cat, setCat] = useState<string>("Mercearia");
+  const [mes, setMes] = useState(hojeLocal.slice(0, 7));
+  const [cat, setCat] = useState("COMPLEMENTAR");
+  const [sim, setSim] = useState("");
+  const [fluxo, setFluxo] = useState("TOTAL");
 
-  // Ajustes manuais de simulação do usuário (localStorage)
-  const [ajustes, setAjustes] = useState<Record<string, number>>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [cats, setCats] = useState<Categoria[]>([]);
+  const [params, setParams] = useState<ParametroFluxo[]>([]);
+  const [sims, setSims] = useState<SimulacaoResumo[]>([]);
+  const [proj, setProj] = useState<Projecao | null>(null);
+  const [comp, setComp] = useState<Comparativo | null>(null);
+  const [simDef, setSimDef] = useState<SimulacaoDetalhe | null>(null);
+  const [reais, setReais] = useState<Projecao | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [recarregar, setRecarregar] = useState(0);
 
-  const [pendente, setPendente] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string>("");
-  // Estado de destaque sincronizado bidirecional entre Gráfico e Tabela
-  const [selectedIso, setSelectedIso] = useState<string | null>(null);
+  const [pendFluxo, setPendFluxo] = useState<Record<string, Pendente>>({});
+  const [pendReal, setPendReal] = useState<Record<string, Pendente>>({});
+  const [salvando, setSalvando] = useState(false);
 
-  // Cálculo de período idêntico ao anexo:
-  // if (visao==='semana'){ const ini=addD(HOJE,-((HOJE.getDay()+6)%7)); return [ini, addD(ini,6)] }
-  // return [new Date(ano, mes, 1), new Date(ano, mes+1, 0)]
-  const [iniDate, fimDate] = useMemo(() => {
+  const hoje = proj?.hoje || hojeLocal;
+  const amanha = iso(addD(parse(hoje), 1));
+  const catInfo = cats.find((c) => c.codigo === cat);
+  const fluxosCat = cat === "TODAS" || !catInfo ? [] : catInfo.fluxos.map((f) => f.codigo);
+  const fluxoEdicao = fluxosCat.length === 1 ? fluxosCat[0] : fluxo !== "TOTAL" ? fluxo : null;
+
+  const periodo = useMemo((): [string, string] => {
     if (visao === "semana") {
-      const ini = addD(HOJE, -((HOJE.getDay() + 6) % 7));
-      return [ini, addD(ini, 6)];
+      const h = parse(hoje);
+      const ini = addD(h, -((h.getDay() + 6) % 7));
+      return [iso(ini), iso(addD(ini, 6))];
     }
-    return [new Date(2026, mes, 1), new Date(2026, mes + 1, 0)];
-  }, [visao, mes]);
+    const [y, m] = mes.split("-").map(Number);
+    return [iso(new Date(y, m - 1, 1)), iso(new Date(y, m, 0))];
+  }, [visao, mes, hoje]);
 
-  const editavel = cd !== "__all" && cat !== "__all";
+  const notificar = useCallback((msg: string) => showNotification?.(msg), [showNotification]);
 
-  // Série operacional consolidada (inteligência matemática exata do anexo)
-  const { capTotal, serieAgg } = useMemo(() => {
-    const cds = cd === "__all" ? CDS : [cd];
-    const cats = cat === "__all" ? Object.keys(CATS) : [cat];
-    let cap = 0;
-    let occ0 = 0;
-    const agg: Record<number, {
-      iso: string;
-      receb: number;
-      fat: number;
-      fechado: number;
-      bloq: number;
-      real: number;
-      temReal: boolean;
-      mod: { receb?: boolean; fat?: boolean; fechado?: boolean };
-    }> = {};
-
-    for (const c of cds) {
-      for (const ct of cats) {
-        const b = BASE[`${c}|${ct}`];
-        if (!b) continue;
-        cap += b.cap;
-        occ0 += b.occ0;
-        b.dias.forEach((d, i) => {
-          if (!agg[i]) {
-            agg[i] = {
-              iso: d.iso,
-              receb: 0,
-              fat: 0,
-              fechado: 0,
-              bloq: 0,
-              real: 0,
-              temReal: false,
-              mod: {},
-            };
-          }
-          const fut = d.iso > HOJE_ISO;
-          for (const f of EDIT_FIELDS) {
-            const k = `${c}|${ct}|${d.iso}|${f}`;
-            const aj = fut && k in ajustes;
-            agg[i][f] += aj ? ajustes[k] : d[f];
-            if (aj) agg[i].mod[f] = true;
-          }
-          agg[i].bloq += d.bloq;
-          if (d.real != null) {
-            agg[i].real += d.real;
-            agg[i].temReal = true;
-          }
-        });
+  // ------------------------------------------------------------- carga
+  useEffect(() => {
+    (async () => {
+      try {
+        const [c, p, s] = await Promise.all([
+          chamar<Categoria[]>("/categorias"),
+          chamar<{ fluxos: ParametroFluxo[] }>("/parametros"),
+          chamar<SimulacaoResumo[]>("/simulacoes"),
+        ]);
+        setCats(c);
+        setParams(p.fluxos);
+        setSims(s);
+      } catch (e: any) {
+        setErro(e.message);
       }
-    }
+    })();
+  }, []);
 
-    const totalDays = Object.keys(agg).length;
-    const processed: DayAggregate[] = [];
-    let prev = occ0;
-
-    for (let i = 0; i < totalDays; i++) {
-      const a = agg[i];
-      const palRec = a.receb * PALLET_POR_VEICULO;
-      const palFat = (a.fat + a.fechado) / FATOR_CX_PALLET;
-      const proj = prev + palRec - palFat;
-      const pctProj = cap > 0 ? proj / cap : 0;
-      const real = a.temReal ? a.real : null;
-      const pctReal = real != null && cap > 0 ? real / cap : null;
-
-      processed.push({
-        iso: a.iso,
-        receb: a.receb,
-        palRec,
-        fat: a.fat,
-        fechado: a.fechado,
-        palFat,
-        bloq: a.bloq,
-        real,
-        temReal: a.temReal,
-        proj,
-        pctProj,
-        pctReal,
-        mod: a.mod,
-      });
-
-      prev = real != null ? real : proj;
-    }
-
-    return { capTotal: cap, serieAgg: processed };
-  }, [cd, cat, ajustes]);
-
-  // Linhas visíveis no período
-  const rowsVisiveis = useMemo(() => {
-    const a = iso(iniDate);
-    const z = iso(fimDate);
-    return serieAgg.filter((d) => d.iso >= a && d.iso <= z);
-  }, [serieAgg, iniDate, fimDate]);
-
-  const selectedRow = useMemo(
-    () => rowsVisiveis.find((r) => r.iso === selectedIso) || null,
-    [rowsVisiveis, selectedIso]
-  );
-
-  // KPIs com os exatos rótulos e subtextos do anexo
-  const kpis = useMemo(() => {
-    const ultReal = [...serieAgg]
-      .reverse()
-      .find((d) => d.real != null && d.iso <= iso(fimDate));
-    const lastRow = rowsVisiveis[rowsVisiveis.length - 1];
-
-    const pa = ultReal && capTotal > 0 ? ultReal.real! / capTotal : null;
-    const pp = lastRow && capTotal > 0 ? lastRow.pctProj : null;
-
-    return {
-      cap: capTotal,
-      capNote: `Posição ${HOJE_ISO.slice(8)}/${HOJE_ISO.slice(5, 7)}`,
-      ocu: ultReal ? ultReal.real : null,
-      ocuNote: ultReal
-        ? `realizado em ${ultReal.iso.slice(8)}/${ultReal.iso.slice(5, 7)}`
-        : "sem realizado",
-      proj: lastRow ? lastRow.proj : 0,
-      projNote: lastRow
-        ? `projetado para ${lastRow.iso.slice(8)}/${lastRow.iso.slice(5, 7)}`
-        : "—",
-      pa,
-      pp,
-    };
-  }, [serieAgg, rowsVisiveis, capTotal, fimDate]);
-
-  // Subtítulo do período (exatamente como no anexo)
-  const periodoTexto = useMemo(() => {
-    const fmt = (d: Date) =>
-      `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const baseTexto = visao === "semana" ? "Semana atual" : `Mês de ${MESES[mes]}`;
-    return `${baseTexto} · ${fmt(iniDate)} a ${fmt(fimDate)} · realizado até ${fmt(addD(HOJE, -1))}`;
-  }, [visao, mes, iniDate, fimDate]);
-
-  // Edição
-  const handleInputChange = (kIso: string, f: "receb" | "fat" | "fechado", valStr: string) => {
-    if (!editavel || kIso <= HOJE_ISO) return;
-    const v = Math.max(0, Math.round(Number(valStr) || 0));
-    setAjustes((prev) => ({
-      ...prev,
-      [`${cd}|${cat}|${kIso}|${f}`]: v,
-    }));
-    setPendente(true);
-    setSaveStatus("Alterações não salvas");
-  };
-
-  // Salvar (exato como no anexo)
-  const handleSalvar = () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(ajustes));
-      setPendente(false);
-      const h = new Date();
-      const hora = `${String(h.getHours()).padStart(2, "0")}:${String(h.getMinutes()).padStart(2, "0")}`;
-      setSaveStatus(`Salvo às ${hora}`);
-      if (showNotification) {
-        showNotification("Projeção salva com sucesso!");
-      }
-    } catch {
-      setSaveStatus("Não foi possível salvar neste navegador");
-    }
-  };
-
-  // Desfazer ajustes desta visão (exato como no anexo)
-  const handleReset = () => {
-    const a = iso(iniDate);
-    const z = iso(fimDate);
-    let n = 0;
-    const novoAjustes = { ...ajustes };
-    for (const k of Object.keys(novoAjustes)) {
-      const p = k.split("|");
-      if (p[0] === cd && p[1] === cat && p[2] >= a && p[2] <= z) {
-        delete novoAjustes[k];
-        n++;
-      }
-    }
-    setAjustes(novoAjustes);
-    if (n) {
-      setPendente(true);
-      setSaveStatus("Alterações não salvas");
-    }
-  };
-
-  // Status de ocupação (p-ok, p-warn, p-bad)
-  const getPillClass = (p: number) => {
-    if (p >= 0.95) {
-      return isDark
-        ? "bg-rose-500/15 text-rose-300 font-semibold"
-        : "bg-rose-50 text-rose-700 font-semibold";
-    }
-    if (p >= 0.9) {
-      return isDark
-        ? "bg-amber-500/15 text-amber-300 font-semibold"
-        : "bg-amber-50 text-amber-700 font-semibold";
-    }
-    return isDark
-      ? "bg-emerald-500/15 text-emerald-300 font-semibold"
-      : "bg-emerald-50 text-emerald-700 font-semibold";
-  };
-
-  const getPillColor = (p: number | null) => {
-    if (p == null) return isDark ? "#94a3b8" : "#64748b";
-    if (p >= 0.95) return isDark ? "#fb7185" : "#b4372b";
-    if (p >= 0.9) return isDark ? "#fbbf24" : "#b07a0a";
-    return isDark ? "#34d399" : "#2f7d4f";
-  };
-
-  // Gráfico SVG Ocupação dia a dia (reprodução exata da lógica de curvas e rótulos do anexo)
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-
-  const chartData = useMemo(() => {
-    if (rowsVisiveis.length === 0) return null;
-    const n = rowsVisiveis.length;
-    const vals = rowsVisiveis
-      .flatMap((r) => [r.pctProj, r.pctReal])
-      .filter((v): v is number => v != null);
-
-    let lo = Math.floor((Math.min(...vals) * 100 - 6) / 5) * 5;
-    let hi = Math.max(100, Math.ceil((Math.max(...vals) * 100) / 5) * 5);
-    lo = Math.max(0, lo);
-
-    const W = Math.max(n > 16 ? 960 : 720, 680);
-    const H = 165;
-    const m = { l: 40, r: 16, t: 14, b: 24 };
-    const iw = W - m.l - m.r;
-    const ih = H - m.t - m.b;
-
-    const x = (i: number) => m.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
-    const y = (v: number) => m.t + ih - (((v * 100 - lo) / (hi - lo || 1)) * ih);
-
-    const step = hi - lo > 30 ? 10 : 5;
-    const gridLines = [];
-    for (let t = lo; t <= hi; t += step) {
-      gridLines.push({ t, y: y(t / 100) });
-    }
-
-    const path = (key: "pctProj" | "pctReal") => {
-      let d = "";
-      let on = false;
-      rowsVisiveis.forEach((r, i) => {
-        const v = r[key];
-        if (v == null) {
-          on = false;
-          return;
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      setCarregando(true);
+      setErro(null);
+      const q = `categoria=${cat}&inicio=${periodo[0]}&fim=${periodo[1]}`;
+      try {
+        let p: Projecao;
+        if (sim) {
+          const [c, d] = await Promise.all([
+            chamar<Comparativo>(`/simulacoes/${sim}/projecao?${q}`),
+            chamar<SimulacaoDetalhe>(`/simulacoes/${sim}`),
+          ]);
+          if (cancelado) return;
+          setComp(c);
+          setSimDef(d);
+          p = c.simulada;
+        } else {
+          p = await chamar<Projecao>(`/projecao?${q}`);
+          if (cancelado) return;
+          setComp(null);
+          setSimDef(null);
         }
-        d += `${on ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)} `;
-        on = true;
-      });
-      return d;
-    };
-
-    const denso = n > 16;
-    const fmtL = (v: number) =>
-      (v * 100).toLocaleString("pt-BR", {
-        minimumFractionDigits: denso ? 0 : 1,
-        maximumFractionDigits: denso ? 0 : 1,
-      }) + "%";
-
-    const hojeIdx = rowsVisiveis.findIndex((r) => r.iso === HOJE_ISO);
-    const selIdx = selectedIso ? rowsVisiveis.findIndex((r) => r.iso === selectedIso) : -1;
-
-    return {
-      W,
-      H,
-      m,
-      iw,
-      ih,
-      x,
-      y,
-      lo,
-      hi,
-      gridLines,
-      pathProj: path("pctProj"),
-      pathReal: path("pctReal"),
-      hojeIdx,
-      selIdx,
-      denso,
-      fmtL,
-    };
-  }, [rowsVisiveis, selectedIso]);
-
-  // Seleção e sincronização bidirecional elegante entre Tabela e Gráfico
-  const handleSelectDay = useCallback(
-    (isoStr: string, fromChart = false) => {
-      setSelectedIso((prev) => {
-        const next = prev === isoStr ? null : isoStr;
-        if (next) {
-          if (fromChart) {
-            // Rola suavemente a tabela para a linha selecionada sem quebrar a visão
-            setTimeout(() => {
-              const el = document.getElementById(`row-${isoStr}`);
-              if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-              }
-            }, 30);
-          } else if (chartRef.current && chartData) {
-            // Rola o gráfico horizontalmente caso esteja em overflow
-            const idx = rowsVisiveis.findIndex((r) => r.iso === isoStr);
-            if (idx >= 0) {
-              const ptX = chartData.x(idx);
-              chartRef.current.scrollTo({
-                left: Math.max(0, ptX - chartRef.current.clientWidth / 2),
-                behavior: "smooth",
-              });
-            }
-          }
+        setProj(p);
+        if (!sim && cat !== "TODAS") {
+          const h = p.hoje;
+          const r = await chamar<Projecao>(`/projecao?categoria=${cat}&inicio=${iso(addD(parse(h), -6))}&fim=${h}`);
+          if (!cancelado) setReais(r);
+        } else {
+          setReais(null);
         }
-        return next;
-      });
-    },
-    [rowsVisiveis, chartData]
-  );
+      } catch (e: any) {
+        if (!cancelado) setErro(e.message);
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [cat, sim, periodo, recarregar]);
 
-  // Tooltip flutuante inteligente (ao passar o mouse ou fixado no item selecionado quando não houver hover)
-  const activeTooltip = useMemo(() => {
-    if (hoveredIndex !== null && tooltipPos && rowsVisiveis[hoveredIndex]) {
+  const temPendente = Object.keys(pendFluxo).length + Object.keys(pendReal).length > 0;
+  const trocar = (acao: () => void) => {
+    if (temPendente && !window.confirm("Há alterações não salvas. Descartar?")) return;
+    setPendFluxo({});
+    setPendReal({});
+    acao();
+  };
+
+  // ------------------------------------------------------------- valores da tabela
+  const valores = (d: Dia) => {
+    const realPassado = d.tipo === "REALIZADO" && d.data !== hoje;
+    if (realPassado) {
       return {
-        x: tooltipPos.x,
-        y: tooltipPos.y,
-        row: rowsVisiveis[hoveredIndex],
-        isSelected: rowsVisiveis[hoveredIndex].iso === selectedIso,
+        veic: d.veiculos, remun: null, backlog: null, pin: d.palletsIn, frac: d.caixasFracionadas, fech: d.caixasFechadas,
+        pout: d.palletsOut, cap: d.capacidade, bloq: d.bloqueado, real: d.ocupacaoReal, proj: null, pct: d.percentual,
+        aj: [] as string[],
       };
     }
-    if (selectedIso && chartData) {
-      const idx = rowsVisiveis.findIndex((r) => r.iso === selectedIso);
-      if (idx >= 0) {
-        const row = rowsVisiveis[idx];
-        const ptX = chartData.x(idx);
-        const ptY = chartData.y(Math.max(row.pctProj, row.pctReal ?? 0));
-        return {
-          x: ptX,
-          y: ptY,
-          row,
-          isSelected: true,
-        };
-      }
+    const f = fluxoEdicao ? d.fluxos.find((x) => x.fluxo === fluxoEdicao) : undefined;
+    const src = f
+      ? { veic: f.demandaInbound, remun: f.remunerada, backlog: f.backlog, pin: f.palletsIn, frac: f.demandaFracionada,
+          fech: f.demandaFechada, pout: f.palletsOut, aj: f.ajustados || [] }
+      : { veic: d.demandaInbound, remun: d.remunerada, backlog: d.backlog, pin: d.palletsIn, frac: d.caixasFracionadas,
+          fech: d.caixasFechadas, pout: d.palletsOut, aj: Array.from(new Set(d.fluxos.flatMap((x) => x.ajustados || []))) };
+    if (d.tipo === "REALIZADO" && !f) {
+      // hoje: planejado do dia (o realizado entra amanhã)
+      Object.assign(src, {
+        veic: d.planejado?.veiculos ?? null, pin: d.planejado?.palletsIn ?? null,
+        frac: d.planejado?.caixasFracionadas ?? null, fech: d.planejado?.caixasFechadas ?? null,
+      });
     }
-    return null;
-  }, [hoveredIndex, tooltipPos, selectedIso, chartData, rowsVisiveis]);
+    return { ...src, cap: d.capacidade, bloq: d.bloqueado, real: d.ocupacaoReal, proj: d.ocupacaoProjetada, pct: d.percentualProjetado };
+  };
 
-  // Totais do rodapé
-  const footerTotals = useMemo(() => {
-    if (rowsVisiveis.length === 0) return null;
-    const sumReceb = rowsVisiveis.reduce((t, r) => t + r.receb, 0);
-    const sumPalRec = rowsVisiveis.reduce((t, r) => t + r.palRec, 0);
-    const sumFat = rowsVisiveis.reduce((t, r) => t + r.fat, 0);
-    const sumFechado = rowsVisiveis.reduce((t, r) => t + r.fechado, 0);
-    const sumPalFat = rowsVisiveis.reduce((t, r) => t + r.palFat, 0);
-    const last = rowsVisiveis[rowsVisiveis.length - 1];
+  const editavel = (d: Dia, ed?: boolean) =>
+    !!ed && !sim && cat !== "TODAS" && d.tipo !== "REALIZADO" && d.data > hoje && !!fluxoEdicao;
 
-    return {
-      receb: nf(sumReceb),
-      palRec: nf(sumPalRec),
-      fat: nf(sumFat),
-      fechado: nf(sumFechado),
-      palFat: nf(sumPalFat),
-      lastProj: nf(last?.proj),
-      lastPctProj: pf(last?.pctProj),
-      lastRawPct: last?.pctProj ?? 0,
-    };
-  }, [rowsVisiveis]);
+  const editarFluxo = (d: Dia, campo: string, valor: number | null) => {
+    if (!fluxoEdicao) return;
+    const chave = `${fluxoEdicao}|${d.data}`;
+    setPendFluxo((p) => {
+      let atual = p[chave];
+      if (!atual) {
+        const f = d.fluxos.find((x) => x.fluxo === fluxoEdicao);
+        atual = { fluxo: fluxoEdicao, data: d.data };
+        for (const k of Object.values(CAMPO_FLUXO)) atual[k] = f && (f.ajustados || []).includes(k) ? (f as any)[k] : null;
+      }
+      return { ...p, [chave]: { ...atual, [campo]: valor } };
+    });
+  };
+
+  const salvarPlanejado = async () => {
+    setSalvando(true);
+    try {
+      await chamar("/lancamentos/fluxos", { method: "PUT", body: JSON.stringify(Object.values(pendFluxo)) });
+      setPendFluxo({});
+      notificar("✅ Planejado salvo");
+      setRecarregar((n) => n + 1);
+    } catch (e: any) {
+      setErro(e.message);
+      notificar(`❌ ${e.message}`);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const desfazer = async () => {
+    if (!fluxoEdicao || !proj) return;
+    const dias = proj.dias.filter((d) => d.tipo !== "REALIZADO" && d.data > hoje);
+    if (!dias.length) return;
+    if (!window.confirm(`Remover os ajustes planejados de ${fluxoEdicao} entre ${dm(dias[0].data)} e ${dm(dias[dias.length - 1].data)}?`)) return;
+    try {
+      await chamar("/lancamentos/fluxos", { method: "PUT", body: JSON.stringify(dias.map((d) => ({ fluxo: fluxoEdicao, data: d.data }))) });
+      setPendFluxo({});
+      setRecarregar((n) => n + 1);
+    } catch (e: any) {
+      setErro(e.message);
+    }
+  };
+
+  const lancarRealizado = async () => {
+    const itens = Object.values(pendReal);
+    if (!itens.length) return;
+    const incompletos = itens.filter((r) => CAMPOS_REAL.some((k) => r[k] == null)).map((r) => dm(r.data as string));
+    let msg = `Lançar o realizado de ${itens.map((r) => dm(r.data as string)).join(", ")}? Depois de lançado não pode ser alterado.`;
+    if (incompletos.length) msg += `\n\nAtenção: ${incompletos.join(", ")} tem campos vazios, que ficarão vazios para sempre.`;
+    if (!window.confirm(msg)) return;
+    setSalvando(true);
+    try {
+      await chamar("/lancamentos/realizados", { method: "PUT", body: JSON.stringify(itens) });
+      setPendReal({});
+      notificar("✅ Realizado lançado");
+      setRecarregar((n) => n + 1);
+    } catch (e: any) {
+      setErro(e.message);
+      notificar(`❌ ${e.message}`);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  // ------------------------------------------------------------- simulação
+  const novaSimulacao = async () => {
+    const nome = window.prompt("Nome da simulação:", `Simulação ${new Date().toLocaleDateString("pt-BR")}`);
+    if (!nome) return;
+    try {
+      const s = await chamar<SimulacaoResumo>("/simulacoes", { method: "POST", body: JSON.stringify({ nome, definicao: {} }) });
+      setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
+      setSim(String(s.id));
+    } catch (e: any) {
+      setErro(e.message);
+    }
+  };
+
+  // ------------------------------------------------------------- estilos
+  const painel = `rounded-2xl border shadow-xs ${isDark ? "bg-slate-900/60 border-slate-800/80" : "bg-white border-slate-200/90"}`;
+  const campo = `h-9 px-3 rounded-lg border font-medium outline-hidden transition-colors ${
+    isDark ? "bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700" : "bg-white border-slate-200 text-slate-800 hover:border-slate-300"
+  }`;
+  const rotulo = "text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500";
+  const inputCel = `w-full min-w-[78px] rounded-md border px-2 py-1 text-right tabular-nums outline-hidden ${
+    isDark ? "bg-slate-950 border-amber-700/50 text-slate-100" : "bg-white border-amber-300 text-slate-900"
+  }`;
+  const btn = `inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${
+    isDark ? "border-slate-700 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"
+  }`;
+  const btnPrimario = `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer ${
+    isDark ? "bg-slate-100 text-slate-900 hover:bg-white" : "bg-slate-900 text-white hover:bg-slate-800"
+  }`;
+
+  const meses = useMemo(() => {
+    const base = new Date(parse(hoje).getFullYear(), parse(hoje).getMonth() - 4, 1);
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+      return { v: iso(d).slice(0, 7), t: `${MESES[d.getMonth()][0].toUpperCase()}${MESES[d.getMonth()].slice(1)} ${d.getFullYear()}` };
+    });
+  }, [hoje]);
+
+  const r = proj?.resumo;
+  const ultimo = proj?.dias[proj.dias.length - 1];
+  const dicas: string[] = [];
+  if (cat === "TODAS") dicas.push('Com "Todas as categorias" a tabela mostra a soma e não é editável.');
+  else if (sim) dicas.push("Simulação: a tabela mostra a projeção simulada, sem edição. Ajuste a simulação no painel abaixo.");
+  else {
+    if (fluxosCat.length > 1 && fluxo === "TOTAL") dicas.push("Para editar, escolha o fluxo (Limpeza ou Perfumaria).");
+    dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em "Lançar realizado".');
+  }
+  dicas.push(...(proj?.avisos || []));
 
   return (
     <div
-      className={`w-full min-h-screen transition-colors duration-200 ${
+      className={`w-full min-h-full transition-colors duration-200 ${
         isDark ? "bg-[#070b14] text-slate-100" : "bg-[#f8fafc] text-slate-900"
       } p-4 md:p-6 lg:p-8 flex flex-col gap-6`}
     >
-      {/* ------------------------------------------------------------- */}
-      {/* CABEÇALHO: Exatos Rótulos do Anexo com Enquadramento Executivo*/}
-      {/* ------------------------------------------------------------- */}
-      <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 border-b pb-5 border-slate-200/80 dark:border-slate-800/80">
+      {/* CABEÇALHO E FILTROS */}
+      <header className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-5 border-b pb-5 border-slate-200/80 dark:border-slate-800/80">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-              Projeção de Ocupação do CD
-            </h1>
-            <span className="inline-block font-mono text-[11px] tracking-wider uppercase border border-dashed border-slate-400 dark:border-slate-600 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-sm">
-              dados de exemplo
-            </span>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Projeção de Ocupação do CD</h1>
+            {sim && (
+              <span className="rounded-sm border border-violet-500 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider text-violet-500">
+                simulação
+              </span>
+            )}
           </div>
           <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            {periodoTexto}
+            {visao === "semana" ? "Semana atual" : `Mês de ${MESES[parse(periodo[0]).getMonth()]}`} · {dm(periodo[0])} a {dm(periodo[1])} · CD 1965
+            {proj ? ` · ${proj.nomeCategoria} · realizado até ${dm(proj.ultimaDataRealizada)}` : ""}
           </p>
         </div>
 
-        {/* Filtros: Visão, Mês, CD, Categoria (Rótulos e Opções Exatas) */}
         <div className="flex flex-wrap items-end gap-2.5 sm:gap-3 text-xs">
-          {/* Visão */}
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500">
-              Visão
-            </span>
-            <div
-              className={`inline-flex rounded-lg p-0.5 border ${
-                isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setVisao("semana")}
-                className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-                  visao === "semana"
-                    ? isDark
-                      ? "bg-slate-800 text-slate-50 shadow-xs font-semibold"
-                      : "bg-slate-900 text-white shadow-xs font-semibold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                }`}
-              >
-                Semana atual
-              </button>
-              <button
-                type="button"
-                onClick={() => setVisao("mes")}
-                className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-                  visao === "mes"
-                    ? isDark
-                      ? "bg-slate-800 text-slate-50 shadow-xs font-semibold"
-                      : "bg-slate-900 text-white shadow-xs font-semibold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                }`}
-              >
-                Mês fechado
-              </button>
+            <span className={rotulo}>Visão</span>
+            <div className={`inline-flex rounded-lg p-0.5 border ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+              {(["semana", "mes"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => trocar(() => setVisao(v))}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all cursor-pointer ${
+                    visao === v
+                      ? isDark ? "bg-slate-800 text-slate-50 font-semibold" : "bg-slate-900 text-white font-semibold"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  {v === "semana" ? "Semana atual" : "Mês"}
+                </button>
+              ))}
             </div>
           </div>
-
-          {/* Mês */}
           <div className="flex flex-col gap-1">
-            <label
-              htmlFor="sel-mes"
-              className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500"
-            >
-              Mês
-            </label>
-            <select
-              id="sel-mes"
-              disabled={visao === "semana"}
-              value={mes}
-              onChange={(e) => setMes(Number(e.target.value))}
-              className={`h-9 px-3 rounded-lg border font-medium outline-hidden transition-colors ${
-                visao === "semana" ? "opacity-45 cursor-not-allowed" : "cursor-pointer"
-              } ${
-                isDark
-                  ? "bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700 focus:border-amber-500/50"
-                  : "bg-white border-slate-200 text-slate-800 hover:border-slate-300 focus:border-amber-600"
-              }`}
-            >
-              {[7, 8, 9, 10, 11].map((m) => (
-                <option key={m} value={m}>
-                  {MESES[m].charAt(0).toUpperCase() + MESES[m].slice(1)} 2026
-                </option>
-              ))}
+            <label htmlFor="sop-mes" className={rotulo}>Mês</label>
+            <select id="sop-mes" disabled={visao === "semana"} value={mes} onChange={(e) => trocar(() => setMes(e.target.value))}
+              className={`${campo} ${visao === "semana" ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}`}>
+              {meses.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}
             </select>
           </div>
-
-          {/* CD */}
           <div className="flex flex-col gap-1">
-            <label
-              htmlFor="sel-cd"
-              className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500"
-            >
-              CD
-            </label>
-            <select
-              id="sel-cd"
-              value={cd}
-              onChange={(e) => setCd(e.target.value)}
-              className={`h-9 px-3 rounded-lg border font-medium outline-hidden cursor-pointer transition-colors ${
-                isDark
-                  ? "bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700 focus:border-amber-500/50"
-                  : "bg-white border-slate-200 text-slate-800 hover:border-slate-300 focus:border-amber-600"
-              }`}
-            >
-              <option value="__all">Todos os CDs</option>
-              {CDS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+            <label htmlFor="sop-cd" className={rotulo}>CD</label>
+            <select id="sop-cd" disabled className={`${campo} opacity-80`}><option>1965</option></select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sop-cat" className={rotulo}>Categoria</label>
+            <select id="sop-cat" value={cat} onChange={(e) => { const v = e.target.value; trocar(() => { setCat(v); setFluxo("TOTAL"); }); }} className={`${campo} cursor-pointer`}>
+              <option value="TODAS">Todas as categorias</option>
+              {cats.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}
             </select>
           </div>
-
-          {/* Categoria */}
           <div className="flex flex-col gap-1">
-            <label
-              htmlFor="sel-cat"
-              className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500"
-            >
-              Categoria
-            </label>
-            <select
-              id="sel-cat"
-              value={cat}
-              onChange={(e) => setCat(e.target.value)}
-              className={`h-9 px-3 rounded-lg border font-medium outline-hidden cursor-pointer transition-colors ${
-                isDark
-                  ? "bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700 focus:border-amber-500/50"
-                  : "bg-white border-slate-200 text-slate-800 hover:border-slate-300 focus:border-amber-600"
-              }`}
-            >
-              <option value="__all">Todas as categorias</option>
-              {Object.keys(CATS).map((ct) => (
-                <option key={ct} value={ct}>
-                  {ct}
-                </option>
-              ))}
+            <label htmlFor="sop-sim" className={rotulo}>Cenário</label>
+            <select id="sop-sim" value={sim}
+              onChange={(e) => {
+                const v = e.target.value;
+                trocar(() => (v === "__nova" ? void novaSimulacao() : setSim(v)));
+              }}
+              className={`${campo} cursor-pointer`}>
+              <option value="">Base oficial</option>
+              {sims.map((s) => <option key={s.id} value={String(s.id)}>Simulação: {s.nome}</option>)}
+              <option value="__nova">+ Nova simulação…</option>
             </select>
           </div>
         </div>
       </header>
 
-      {/* ------------------------------------------------------------- */}
-      {/* FAIXA DE 5 INDICADORES: Exatos Rótulos e Cálculos do Anexo   */}
-      {/* ------------------------------------------------------------- */}
-      <section
-        aria-label="Resumo"
-        className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 rounded-2xl border shadow-xs overflow-hidden ${
-          isDark
-            ? "bg-slate-900/60 border-slate-800/80 divide-slate-800/80"
-            : "bg-white border-slate-200/90 divide-slate-200/90"
-        } divide-y md:divide-y-0 md:divide-x`}
-      >
-        {/* KPI 1: Qtd capacidade */}
-        <div className="p-4 sm:p-5 flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Qtd capacidade
-          </span>
-          <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {nf(kpis.cap)}
-            </div>
-            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-              {kpis.capNote}
-            </div>
-          </div>
+      {erro && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400 flex items-start justify-between gap-3">
+          <span>Erro: {erro}</span>
+          <button type="button" onClick={() => setErro(null)} aria-label="Fechar" className="cursor-pointer"><X className="h-4 w-4" /></button>
         </div>
+      )}
 
-        {/* KPI 2: Qtd ocupada */}
-        <div className="p-4 sm:p-5 flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Qtd ocupada
-          </span>
-          <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {nf(kpis.ocu)}
-            </div>
-            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-              {kpis.ocuNote}
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 3: Qtd projetada */}
-        <div className="p-4 sm:p-5 flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Qtd projetada
-          </span>
-          <div className="mt-2">
-            <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {nf(kpis.proj)}
-            </div>
-            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-              {kpis.projNote}
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 4: % ocupação atual */}
-        <div className="p-4 sm:p-5 flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            % ocupação atual
-          </span>
-          <div className="mt-2">
-            <div
-              className="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums"
-              style={{ color: getPillColor(kpis.pa) }}
-            >
-              {pf(kpis.pa)}
-            </div>
-            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${Math.min(100, (kpis.pa || 0) * 100)}%`,
-                  backgroundColor: getPillColor(kpis.pa),
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 5: % ocupação projetada */}
-        <div className="p-4 sm:p-5 flex flex-col justify-between col-span-2 md:col-span-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            % ocupação projetada
-          </span>
-          <div className="mt-2">
-            <div
-              className="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums"
-              style={{ color: getPillColor(kpis.pp) }}
-            >
-              {pf(kpis.pp)}
-            </div>
-            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${Math.min(100, (kpis.pp || 0) * 100)}%`,
-                  backgroundColor: getPillColor(kpis.pp),
-                }}
-              />
-            </div>
-          </div>
-        </div>
+      {/* INDICADORES */}
+      <section aria-label="Resumo" className={`grid shrink-0 grid-cols-2 md:grid-cols-3 lg:grid-cols-5 overflow-hidden ${painel}`}>
+        <Kpi titulo="Qtd capacidade" valor={nf(r?.capacidade)} nota={r ? `útil (− ${nf(r.bloqueado)} bloqueadas) em ${dm(r.dataFinal)}` : ""} />
+        <Kpi titulo="Qtd ocupada" valor={nf(r?.ocupacaoAtual)} nota={r?.dataOcupacaoAtual ? `realizado em ${dm(r.dataOcupacaoAtual)}` : "sem realizado"} />
+        <Kpi titulo="Qtd projetada" valor={nf(r?.ocupacaoFinal)}
+          nota={r ? `${ultimo?.tipo === "REALIZADO" ? "realizado em" : sim ? "simulado para" : "projetado para"} ${dm(r.dataFinal)}` : ""} />
+        <Kpi titulo="% ocupação atual" valor={pf(r?.percentualAtual)} cor={corPct(r?.percentualAtual)} barra={r?.percentualAtual} />
+        <Kpi titulo="% ocupação projetada" valor={pf(r?.percentualFinal)} cor={corPct(r?.percentualFinal)} barra={r?.percentualFinal}
+          nota={comp ? `base oficial: ${pf(comp.base.resumo.percentualFinal)}` : r?.picoProjetado ? `pico ${pf(r.picoProjetado.percentual)} em ${dm(r.picoProjetado.data)}` : ""} />
       </section>
 
-      {/* ------------------------------------------------------------- */}
-      {/* PAINEL 1: Ocupação dia a dia (Gráfico SVG)                   */}
-      {/* ------------------------------------------------------------- */}
-      <section
-        id="grafico"
-        aria-label="Ocupação dia a dia"
-        className={`rounded-2xl border p-4 shadow-xs ${
-          isDark
-            ? "bg-slate-900/60 border-slate-800/80"
-            : "bg-white border-slate-200/90"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-              Ocupação dia a dia
-            </h2>
-            {selectedRow && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                <span>
-                  {selectedRow.iso.slice(8)}/{selectedRow.iso.slice(5, 7)} · Proj. {pf(selectedRow.pctProj)}
-                  {selectedRow.pctReal != null && ` · Real ${pf(selectedRow.pctReal)}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedIso(null)}
-                  className="ml-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                  title="Remover destaque"
-                >
-                  <X className="h-3 w-3" />
+      {/* GRÁFICO */}
+      <section className={`${painel} p-4 sm:p-5`}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold">Ocupação dia a dia</h2>
+          <div className="flex flex-wrap gap-4 text-xs text-slate-500 dark:text-slate-400">
+            <Legenda cor={isDark ? "#60a5fa" : "#2563eb"} texto="Realizada (%)" />
+            <Legenda cor={isDark ? "#f59e0b" : "#d97706"} texto={sim ? "Simulada (%)" : "Projetada (%)"} />
+            {sim && <Legenda cor="#94a3b8" texto="Base oficial (%)" tracejada />}
+          </div>
+        </div>
+        {proj && proj.dias.length > 0 ? (
+          <Grafico dias={proj.dias} base={comp?.base.dias} hoje={hoje} isDark={isDark} simulacao={!!sim} />
+        ) : (
+          <p className="py-10 text-center text-sm text-slate-500">{carregando ? "Carregando…" : "Sem dados no período."}</p>
+        )}
+      </section>
+
+      {/* SEQUÊNCIA DIÁRIA */}
+      <section className={`${painel} p-4 sm:p-5`}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold">Sequência diária</h2>
+          <span className="text-xs text-slate-500 dark:text-slate-400">Pallets, exceto veículos e caixas · dias realizados mostram só o real</span>
+        </div>
+
+        {fluxosCat.length > 1 && catInfo && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+            <span className={rotulo}>Fluxo</span>
+            <div className={`inline-flex rounded-lg p-0.5 border ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+              {[{ codigo: "TOTAL", nome: `Total ${catInfo.nome}` }, ...catInfo.fluxos].map((f) => (
+                <button key={f.codigo} type="button" onClick={() => setFluxo(f.codigo)}
+                  className={`px-3 py-1.5 rounded-md font-medium cursor-pointer ${
+                    fluxo === f.codigo ? (isDark ? "bg-slate-800 text-white font-semibold" : "bg-slate-900 text-white font-semibold") : "text-slate-500"
+                  }`}>
+                  {f.nome}
                 </button>
-              </span>
-            )}
-          </div>
-
-          {/* Legenda com cores idênticas ao anexo (âmbar/ouro projetada e azul/ciano realizada) */}
-          <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <div className="flex items-center gap-1.5">
-              <span className="h-1 w-4 rounded-xs bg-[#c27c0e] dark:bg-[#e9a53a]" />
-              <span>Projetada (%)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-1 w-4 rounded-xs bg-[#1f6f8b] dark:bg-[#5fb3cf]" />
-              <span>Realizada (%)</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Gráfico SVG com curvas, pontos e rótulos diretos */}
-        <div ref={chartRef} className="relative overflow-x-auto select-none pt-2 pb-1">
-          {chartData && (
-            <svg
-              viewBox={`0 0 ${chartData.W} ${chartData.H}`}
-              className="w-full min-w-[650px] overflow-visible"
-              role="img"
-              aria-label="Ocupação projetada e realizada por dia"
-            >
-              {/* Linhas de Grade e Eixo Y */}
-              {chartData.gridLines.map((gl) => (
-                <g key={gl.t}>
-                  <line
-                    x1={chartData.m.l}
-                    x2={chartData.W - chartData.m.r}
-                    y1={gl.y}
-                    y2={gl.y}
-                    stroke={isDark ? "#232928" : "#eceeeb"}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={chartData.m.l - 8}
-                    y={gl.y + 4}
-                    textAnchor="end"
-                    fontSize="11"
-                    fill={isDark ? "#9aa5a1" : "#5f6a66"}
-                    fontFamily="monospace"
-                  >
-                    {gl.t}%
-                  </text>
-                </g>
               ))}
-
-              {/* Faixa sutil de destaque da coluna selecionada */}
-              {chartData.selIdx >= 0 && (
-                <g>
-                  <rect
-                    x={chartData.x(chartData.selIdx) - (chartData.denso ? 12 : 18)}
-                    y={chartData.m.t}
-                    width={chartData.denso ? 24 : 36}
-                    height={chartData.ih}
-                    rx="6"
-                    fill={isDark ? "rgba(245, 158, 11, 0.08)" : "rgba(245, 158, 11, 0.09)"}
-                    stroke={isDark ? "rgba(245, 158, 11, 0.25)" : "rgba(217, 119, 6, 0.25)"}
-                    strokeWidth="1"
-                  />
-                  <line
-                    x1={chartData.x(chartData.selIdx)}
-                    x2={chartData.x(chartData.selIdx)}
-                    y1={chartData.m.t}
-                    y2={chartData.m.t + chartData.ih}
-                    stroke={isDark ? "#f59e0b" : "#d97706"}
-                    strokeWidth="1.5"
-                    strokeDasharray="2 3"
-                    opacity="0.85"
-                  />
-                </g>
-              )}
-
-              {/* Rótulos do Eixo X */}
-              {rowsVisiveis.map((r, i) => {
-                const isHoje = r.iso === HOJE_ISO;
-                const isSelected = i === chartData.selIdx;
-                return (
-                  <g
-                    key={`lbl-${r.iso}`}
-                    onClick={() => handleSelectDay(r.iso, true)}
-                    className="cursor-pointer"
-                  >
-                    {isSelected && (
-                      <rect
-                        x={chartData.x(i) - (chartData.denso ? 13 : 16)}
-                        y={chartData.H - 22}
-                        width={chartData.denso ? 26 : 32}
-                        height={16}
-                        rx="4"
-                        fill={isDark ? "rgba(245, 158, 11, 0.2)" : "rgba(245, 158, 11, 0.18)"}
-                      />
-                    )}
-                    <text
-                      x={chartData.x(i)}
-                      y={chartData.H - 10}
-                      textAnchor="middle"
-                      fontSize={chartData.denso ? 10 : 11}
-                      fill={
-                        isSelected
-                          ? isDark
-                            ? "#fbbf24"
-                            : "#b45309"
-                          : isHoje
-                          ? isDark
-                            ? "#e7ebe9"
-                            : "#1d2321"
-                          : isDark
-                          ? "#9aa5a1"
-                          : "#5f6a66"
-                      }
-                      fontWeight={isSelected ? "700" : isHoje ? "600" : "400"}
-                    >
-                      {r.iso.slice(8)}/{r.iso.slice(5, 7)}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Linha divisória vertical "HOJE" */}
-              {chartData.hojeIdx >= 0 && (
-                <g>
-                  <line
-                    x1={chartData.x(chartData.hojeIdx)}
-                    x2={chartData.x(chartData.hojeIdx)}
-                    y1={chartData.m.t}
-                    y2={chartData.m.t + chartData.ih}
-                    stroke={isDark ? "#9aa5a1" : "#5f6a66"}
-                    strokeWidth="1"
-                    strokeDasharray="2 3"
-                  />
-                  <text
-                    x={chartData.x(chartData.hojeIdx) + 4}
-                    y={chartData.m.t + 10}
-                    fontSize="10"
-                    fill={isDark ? "#9aa5a1" : "#5f6a66"}
-                    fontFamily="monospace"
-                  >
-                    HOJE
-                  </text>
-                </g>
-              )}
-
-              {/* Curvas Projetada e Realizada */}
-              {chartData.pathProj && (
-                <path
-                  d={chartData.pathProj}
-                  fill="none"
-                  stroke={isDark ? "#e9a53a" : "#c27c0e"}
-                  strokeWidth="2.25"
-                  strokeLinejoin="round"
-                />
-              )}
-              {chartData.pathReal && (
-                <path
-                  d={chartData.pathReal}
-                  fill="none"
-                  stroke={isDark ? "#5fb3cf" : "#1f6f8b"}
-                  strokeWidth="2.25"
-                  strokeLinejoin="round"
-                />
-              )}
-
-              {/* Círculos nos pontos com halo suave de destaque */}
-              {rowsVisiveis.map((r, i) => {
-                const isSelected = i === chartData.selIdx;
-                return (
-                  <g
-                    key={`pts-${r.iso}`}
-                    onClick={() => handleSelectDay(r.iso, true)}
-                    className="cursor-pointer"
-                  >
-                    {isSelected && (
-                      <circle
-                        cx={chartData.x(i)}
-                        cy={chartData.y(r.pctProj)}
-                        r={chartData.denso ? 7.5 : 9.5}
-                        fill="none"
-                        stroke={isDark ? "#e9a53a" : "#c27c0e"}
-                        strokeWidth="1.75"
-                        strokeOpacity="0.8"
-                        className="animate-pulse"
-                      />
-                    )}
-                    <circle
-                      cx={chartData.x(i)}
-                      cy={chartData.y(r.pctProj)}
-                      r={isSelected ? (chartData.denso ? 3.8 : 4.8) : (chartData.denso ? 2.2 : 3.2)}
-                      fill={isDark ? "#e9a53a" : "#c27c0e"}
-                    />
-                    {r.pctReal != null && (
-                      <>
-                        {isSelected && (
-                          <circle
-                            cx={chartData.x(i)}
-                            cy={chartData.y(r.pctReal)}
-                            r={chartData.denso ? 7.5 : 9.5}
-                            fill="none"
-                            stroke={isDark ? "#5fb3cf" : "#1f6f8b"}
-                            strokeWidth="1.75"
-                            strokeOpacity="0.8"
-                            className="animate-pulse"
-                          />
-                        )}
-                        <circle
-                          cx={chartData.x(i)}
-                          cy={chartData.y(r.pctReal)}
-                          r={isSelected ? (chartData.denso ? 4.0 : 5.0) : (chartData.denso ? 2.4 : 3.4)}
-                          fill={isDark ? "#5fb3cf" : "#1f6f8b"}
-                        />
-                      </>
-                    )}
-                  </g>
-                );
-              })}
-
-              {/* Rótulos de porcentagem impressos nos pontos (exatamente como no anexo) */}
-              {rowsVisiveis.map((r, i) => {
-                const temReal = r.pctReal != null;
-                const projAcima = !temReal || r.pctProj >= r.pctReal;
-                const n = rowsVisiveis.length;
-                const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
-                const strokeColor = isDark ? "#1c2120" : "#ffffff";
-
-                return (
-                  <g key={`rot-${r.iso}`}>
-                    {/* Rótulo Projetado */}
-                    <text
-                      x={chartData.x(i)}
-                      y={chartData.y(r.pctProj) + (projAcima ? -6 : 13)}
-                      textAnchor={anchor}
-                      fontSize={chartData.denso ? 9 : 9.5}
-                      fontWeight="600"
-                      fill={isDark ? "#e9a53a" : "#c27c0e"}
-                      stroke={strokeColor}
-                      strokeWidth="2.5"
-                      paintOrder="stroke"
-                    >
-                      {chartData.fmtL(r.pctProj)}
-                    </text>
-
-                    {/* Rótulo Realizado */}
-                    {temReal && (
-                      <text
-                        x={chartData.x(i)}
-                        y={chartData.y(r.pctReal!) + (!projAcima ? -6 : 13)}
-                        textAnchor={anchor}
-                        fontSize={chartData.denso ? 9 : 9.5}
-                        fontWeight="600"
-                        fill={isDark ? "#5fb3cf" : "#1f6f8b"}
-                        stroke={strokeColor}
-                        strokeWidth="2.5"
-                        paintOrder="stroke"
-                      >
-                        {chartData.fmtL(r.pctReal!)}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-
-              {/* Hit areas transparentes para seleção e Tooltip */}
-              {rowsVisiveis.map((r, i) => {
-                const bw =
-                  rowsVisiveis.length > 1
-                    ? chartData.iw / (rowsVisiveis.length - 1)
-                    : chartData.iw;
-                return (
-                  <rect
-                    key={`hit-${r.iso}`}
-                    x={chartData.x(i) - bw / 2}
-                    y={chartData.m.t}
-                    width={bw}
-                    height={chartData.ih}
-                    fill="transparent"
-                    className="cursor-pointer"
-                    onClick={() => handleSelectDay(r.iso, true)}
-                    onMouseEnter={(e) => {
-                      setHoveredIndex(i);
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const parentRect = chartRef.current?.getBoundingClientRect();
-                      if (parentRect) {
-                        setTooltipPos({
-                          x: rect.left + rect.width / 2 - parentRect.left,
-                          y: chartData.y(Math.max(r.pctProj, r.pctReal || 0)),
-                        });
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      setHoveredIndex(null);
-                      setTooltipPos(null);
-                    }}
-                  />
-                );
-              })}
-            </svg>
-          )}
-
-          {/* Tooltip flutuante inteligente */}
-          {activeTooltip && (
-            <div
-              className={`absolute pointer-events-none -translate-x-1/2 -translate-y-full mb-3 px-3 py-1.5 rounded-lg shadow-lg text-xs tabular-nums z-30 transition-all duration-150 border ${
-                activeTooltip.isSelected
-                  ? isDark
-                    ? "bg-slate-900/95 border-amber-500/50 text-slate-100 shadow-amber-500/10 font-medium backdrop-blur-xs"
-                    : "bg-white/95 border-amber-500/40 text-slate-900 shadow-amber-500/10 font-medium backdrop-blur-xs"
-                  : isDark
-                  ? "bg-[#e7ebe9] text-[#141817] font-medium border-transparent"
-                  : "bg-[#1d2321] text-[#f3f4f2] font-medium border-transparent"
-              }`}
-              style={{
-                left: `${activeTooltip.x}px`,
-                top: `${Math.max(activeTooltip.y, 25)}px`,
-              }}
-            >
-              <div className="flex items-center gap-1.5">
-                {activeTooltip.isSelected && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                )}
-                <span>
-                  {activeTooltip.row.iso.slice(8)}/
-                  {activeTooltip.row.iso.slice(5, 7)} · proj.{" "}
-                  {pf(activeTooltip.row.pctProj)}
-                  {activeTooltip.row.pctReal != null
-                    ? ` · real ${pf(activeTooltip.row.pctReal)}`
-                    : ""}
-                </span>
-              </div>
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------------- */}
-      {/* PAINEL 2: Sequência diária (Tabela Operacional)               */}
-      {/* ------------------------------------------------------------- */}
-      <section
-        id="sequencia"
-        aria-label="Sequência diária"
-        className={`rounded-2xl border p-5 shadow-xs ${
-          isDark
-            ? "bg-slate-900/60 border-slate-800/80"
-            : "bg-white border-slate-200/90"
-        }`}
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Sequência diária
-            </h2>
-            {selectedRow && (
-              <button
-                type="button"
-                onClick={() => setSelectedIso(null)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer"
-                title="Limpar seleção"
-              >
-                <span>Foco: {selectedRow.iso.slice(8)}/{selectedRow.iso.slice(5, 7)}</span>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            Pallets, exceto recebimento (veículos) e faturamento frac. (caixas) · clique na linha para sincronizar com o gráfico
-          </span>
-        </div>
-
-        {/* Mensagem de Dica com o exato texto do anexo */}
-        {!editavel && (
-          <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
-            <Info className="h-4 w-4 shrink-0" />
-            <span>
-              Para editar, selecione um CD e uma categoria específicos. Com &quot;Todos&quot; a tabela mostra a soma. A edição vale a partir de amanhã (D+1); até hoje fica o realizado.
-            </span>
+            <span className="text-slate-500">Veículos, caixas e pallets do fluxo escolhido; capacidade e ocupação da categoria.</span>
           </div>
         )}
 
-        {/* Tabela Operacional sem bordas duras, com excelente legibilidade e tamanho ampliado */}
-        <div className="overflow-x-auto rounded-xl">
-          <table className="w-full text-sm text-left border-separate border-spacing-y-2 min-w-[1100px]">
+        {dicas.length > 0 && (
+          <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${isDark ? "border-amber-700/40 bg-amber-950/30 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+            {dicas.join(" · ")}
+          </div>
+        )}
+
+        <div className={`overflow-x-auto rounded-lg border ${isDark ? "border-slate-800" : "border-slate-200"}`}>
+          <table className="w-full min-w-[1180px] text-xs tabular-nums">
             <thead>
-              <tr className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                <th className="py-3 px-4">Data</th>
-                <th className="py-3 px-4 text-right">
-                  Recebimento
-                  <br />
-                  (veículo)
-                  <span className="block text-[10px] font-semibold lowercase tracking-normal text-amber-600 dark:text-amber-400 mt-0.5">
-                    editável
-                  </span>
-                </th>
-                <th className="py-3 px-4 text-right">
-                  Pallet proj.
-                  <br />
-                  recebimento
-                </th>
-                <th className="py-3 px-4 text-right">
-                  Faturamento
-                  <br />
-                  frac. (cx)
-                  <span className="block text-[10px] font-semibold lowercase tracking-normal text-amber-600 dark:text-amber-400 mt-0.5">
-                    editável
-                  </span>
-                </th>
-                <th className="py-3 px-4 text-right">
-                  Fechado
-                  <br />
-                  (cx)
-                  <span className="block text-[10px] font-semibold lowercase tracking-normal text-amber-600 dark:text-amber-400 mt-0.5">
-                    editável
-                  </span>
-                </th>
-                <th className="py-3 px-4 text-right">
-                  Pallet proj.
-                  <br />
-                  faturamento
-                </th>
-                <th className="py-3 px-4 text-right">Bloqueado</th>
-                <th className="py-3 px-4 text-right">Qtd ocupada</th>
-                <th className="py-3 px-4 text-right">
-                  Qtd ocupada
-                  <br />
-                  projetada
-                </th>
-                <th className="py-3 px-4 text-right">
-                  % ocupação
-                  <br />
-                  projetada
-                </th>
+              <tr className={isDark ? "bg-slate-900" : "bg-slate-50"}>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Data</th>
+                {COLS.map((c) => (
+                  <th key={c.k}
+                    className={`px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wider ${
+                      c.ed && cat !== "TODAS" && !sim ? (isDark ? "bg-amber-950/30 text-amber-200" : "bg-amber-50 text-amber-900") : "text-slate-500"
+                    }`}>
+                    {c.t}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {rowsVisiveis.map((r) => {
-                const isHoje = r.iso === HOJE_ISO;
-                const isPassado = r.iso < HOJE_ISO;
-                const isFuturo = r.iso > HOJE_ISO;
-                const isSelected = r.iso === selectedIso;
-                const [, m, dd] = r.iso.split("-").map(Number);
-                const dt = new Date(r.iso + "T12:00:00");
-                const wd = WD[dt.getDay()];
-
+              {proj?.dias.map((d) => {
+                const v: any = valores(d);
+                const ehHoje = d.data === hoje;
+                const realPassado = d.tipo === "REALIZADO" && !ehHoje;
                 return (
-                  <tr
-                    key={r.iso}
-                    id={`row-${r.iso}`}
-                    onClick={(e) => {
-                      const tag = (e.target as HTMLElement).tagName;
-                      if (tag === "INPUT" || tag === "BUTTON") return;
-                      handleSelectDay(r.iso, false);
-                    }}
-                    className={`transition-all duration-200 cursor-pointer select-none group rounded-xl ${
-                      isSelected
-                        ? isDark
-                          ? "bg-amber-500/15 ring-2 ring-amber-400/60 shadow-md font-semibold"
-                          : "bg-amber-50 ring-2 ring-amber-400/70 shadow-md font-semibold text-slate-950"
-                        : isHoje
-                        ? isDark
-                          ? "bg-slate-800/90 font-semibold shadow-xs"
-                          : "bg-slate-100 font-semibold text-slate-950 shadow-xs"
-                        : isDark
-                        ? "bg-slate-900/50 hover:bg-slate-800/50"
-                        : "bg-slate-50/80 hover:bg-slate-100/80"
-                    }`}
-                    title={isSelected ? "Clique para remover o destaque" : "Clique para destacar no gráfico"}
-                  >
-                    {/* Data */}
-                    <td className="py-3.5 px-4 first:rounded-l-xl whitespace-nowrap">
-                      <div className="inline-flex items-center">
-                        {isSelected && (
-                          <span
-                            className="inline-block w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 mr-2.5 shadow-xs ring-2 ring-amber-500/30 dark:ring-amber-400/30 animate-pulse"
-                            title="Em destaque"
-                          />
-                        )}
-                        <span className="text-xs font-bold uppercase text-slate-400 dark:text-slate-500 mr-2.5 tracking-wider">
-                          {wd}
-                        </span>
-                        <span className={`text-sm font-bold ${isSelected ? "text-amber-700 dark:text-amber-300 font-extrabold" : "text-slate-800 dark:text-slate-200"}`}>
-                          {String(dd).padStart(2, "0")}/{String(m).padStart(2, "0")}
-                        </span>
-                        {isHoje && (
-                          <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                            hoje
-                          </span>
-                        )}
-                      </div>
+                  <tr key={d.data}
+                    className={`border-t ${isDark ? "border-slate-800/70" : "border-slate-100"} ${
+                      ehHoje ? (isDark ? "bg-sky-950/40" : "bg-sky-50") : d.data < hoje ? (isDark ? "bg-slate-900/40" : "bg-slate-50/60") : ""
+                    }`}>
+                    <td className="px-3 py-1.5 text-left whitespace-nowrap">
+                      <span className="mr-1.5 text-[11px] text-slate-500">{WD[parse(d.data).getDay()]}</span>
+                      <span className={ehHoje ? "font-semibold" : ""}>{dm(d.data)}{ehHoje ? " · hoje" : ""}</span>
+                      {realPassado && <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wider text-sky-500">real</span>}
+                      {d.data < hoje && <Lock className="ml-1 inline h-3 w-3 text-slate-400" />}
                     </td>
-
-                    {/* Recebimento (veículo) */}
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      {isFuturo && editavel ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          inputMode="numeric"
-                          onClick={(e) => e.stopPropagation()}
-                          value={Math.round(r.receb)}
-                          onChange={(e) => handleInputChange(r.iso, "receb", e.target.value)}
-                          className={`w-24 text-right px-3 py-1.5 rounded-lg text-sm font-mono font-semibold outline-hidden transition-all ${
-                            r.mod.receb
-                              ? isDark
-                                ? "bg-amber-500/25 text-amber-200 ring-2 ring-amber-500/60 font-bold"
-                                : "bg-amber-100 text-amber-900 ring-2 ring-amber-400 font-bold"
-                              : isDark
-                              ? "bg-slate-800 text-slate-100 border border-slate-700/80 focus:ring-2 focus:ring-amber-500"
-                              : "bg-white text-slate-900 border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                          }`}
-                        />
-                      ) : (
-                        <span className="tabular-nums font-mono text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {nf(r.receb)}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Pallet proj. recebimento */}
-                    <td className="py-3.5 px-4 text-right tabular-nums font-mono text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {nf(r.palRec)}
-                    </td>
-
-                    {/* Faturamento frac. (cx) */}
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      {isFuturo && editavel ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          inputMode="numeric"
-                          onClick={(e) => e.stopPropagation()}
-                          value={Math.round(r.fat)}
-                          onChange={(e) => handleInputChange(r.iso, "fat", e.target.value)}
-                          className={`w-28 text-right px-3 py-1.5 rounded-lg text-sm font-mono font-semibold outline-hidden transition-all ${
-                            r.mod.fat
-                              ? isDark
-                                ? "bg-amber-500/25 text-amber-200 ring-2 ring-amber-500/60 font-bold"
-                                : "bg-amber-100 text-amber-900 ring-2 ring-amber-400 font-bold"
-                              : isDark
-                              ? "bg-slate-800 text-slate-100 border border-slate-700/80 focus:ring-2 focus:ring-amber-500"
-                              : "bg-white text-slate-900 border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                          }`}
-                        />
-                      ) : (
-                        <span className="tabular-nums font-mono text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {nf(r.fat)}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Fechado (cx) */}
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      {isFuturo && editavel ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          inputMode="numeric"
-                          onClick={(e) => e.stopPropagation()}
-                          value={Math.round(r.fechado)}
-                          onChange={(e) => handleInputChange(r.iso, "fechado", e.target.value)}
-                          className={`w-28 text-right px-3 py-1.5 rounded-lg text-sm font-mono font-semibold outline-hidden transition-all ${
-                            r.mod.fechado
-                              ? isDark
-                                ? "bg-amber-500/25 text-amber-200 ring-2 ring-amber-500/60 font-bold"
-                                : "bg-amber-100 text-amber-900 ring-2 ring-amber-400 font-bold"
-                              : isDark
-                              ? "bg-slate-800 text-slate-100 border border-slate-700/80 focus:ring-2 focus:ring-amber-500"
-                              : "bg-white text-slate-900 border border-slate-300 focus:ring-2 focus:ring-amber-500"
-                          }`}
-                        />
-                      ) : (
-                        <span className="tabular-nums font-mono text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {nf(r.fechado)}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Pallet proj. faturamento */}
-                    <td className="py-3.5 px-4 text-right tabular-nums font-mono text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {nf(r.palFat)}
-                    </td>
-
-                    {/* Bloqueado */}
-                    <td className="py-3.5 px-4 text-right tabular-nums font-mono text-sm font-medium text-slate-500 dark:text-slate-400">
-                      {nf(r.bloq)}
-                    </td>
-
-                    {/* Qtd ocupada */}
-                    <td className="py-3.5 px-4 text-right tabular-nums font-mono font-bold text-sm text-slate-900 dark:text-slate-100">
-                      {r.real != null ? nf(r.real) : "—"}
-                    </td>
-
-                    {/* Qtd ocupada projetada */}
-                    <td
-                      className={`py-3.5 px-4 text-right tabular-nums font-mono font-bold text-sm ${
-                        isPassado
-                          ? "text-slate-400 dark:text-slate-500"
-                          : "text-amber-600 dark:text-amber-400"
-                      }`}
-                    >
-                      {nf(r.proj)}
-                    </td>
-
-                    {/* % ocupação projetada */}
-                    <td className="py-3.5 px-4 text-right last:rounded-r-xl whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center justify-center min-w-[70px] px-3 py-1 rounded-lg text-xs font-bold tabular-nums transition-all ${
-                          isSelected ? "ring-2 ring-amber-500/50 shadow-xs" : ""
-                        } ${getPillClass(r.pctProj)}`}
-                      >
-                        {pf(r.pctProj)}
-                      </span>
-                    </td>
+                    {COLS.map((c) => {
+                      if (editavel(d, c.ed)) {
+                        const campoApi = CAMPO_FLUXO[c.k];
+                        const pend = pendFluxo[`${fluxoEdicao}|${d.data}`];
+                        const temPend = !!pend && campoApi in pend;
+                        const val = temPend ? pend[campoApi] : v[c.k];
+                        const ajustado = (v.aj as string[]).includes(campoApi);
+                        return (
+                          <td key={c.k} className={`px-1.5 py-1 ${isDark ? "bg-amber-950/20" : "bg-amber-50/60"}`}>
+                            <input type="number" min={0} step="any" inputMode="decimal" aria-label={`${c.t} ${d.data}`}
+                              value={val == null ? "" : String(Math.round(Number(val) * 100) / 100)}
+                              onChange={(e) => editarFluxo(d, campoApi, num(e.target.value))}
+                              className={`${inputCel} ${ajustado ? "font-semibold" : ""} ${temPend ? "ring-2 ring-amber-500/60" : ""}`} />
+                          </td>
+                        );
+                      }
+                      if (c.k === "pct") {
+                        return (
+                          <td key={c.k} className="px-3 py-1.5 text-right">
+                            {v.pct == null ? "—" : (
+                              <span className="inline-block min-w-[58px] rounded-full px-2 py-0.5 text-center font-semibold"
+                                style={{ color: corPct(v.pct), backgroundColor: `${corPct(v.pct)}22` }}>
+                                {pf(v.pct)}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      }
+                      return (
+                        <td key={c.k} className={`px-3 py-1.5 text-right ${realPassado && ["remun", "backlog", "proj"].includes(c.k) ? "text-slate-400" : ""}`}>
+                          {nf(v[c.k])}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}
             </tbody>
-
-            {/* Linha Total / fim com os exatos valores e rótulos */}
-            {footerTotals && (
-              <tfoot>
-                <tr
-                  className={`font-bold rounded-xl text-sm ${
-                    isDark ? "bg-slate-800 text-slate-100" : "bg-slate-100 text-slate-900"
-                  }`}
-                >
-                  <td className="py-4 px-4 first:rounded-l-xl">Total / fim</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums">{footerTotals.receb}</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums">{footerTotals.palRec}</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums">{footerTotals.fat}</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums">{footerTotals.fechado}</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums">{footerTotals.palFat}</td>
-                  <td className="py-4 px-4 text-right font-mono text-slate-400">—</td>
-                  <td className="py-4 px-4 text-right font-mono text-slate-400">—</td>
-                  <td className="py-4 px-4 text-right font-mono tabular-nums text-amber-600 dark:text-amber-400">
-                    {footerTotals.lastProj}
-                  </td>
-                  <td className="py-4 px-4 text-right last:rounded-r-xl">
-                    <span
-                      className={`inline-flex items-center justify-center min-w-[70px] px-3 py-1 rounded-lg text-xs font-bold tabular-nums ${getPillClass(
-                        footerTotals.lastRawPct
-                      )}`}
-                    >
-                      {footerTotals.lastPctProj}
-                    </span>
-                  </td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
 
-        {/* Rodapé: Exatas Fórmulas Provisórias e Botões do Anexo */}
-        <div className="mt-5 pt-4 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
-          <p className="leading-relaxed max-w-3xl text-[11px]">
-            Fórmulas provisórias: pallet proj. receb. = veículos × 26 pallets/veículo · pallet proj. fat. = (faturamento frac. + fechado cx) ÷ 40 cx/pallet · ocupada proj. = ocupada do dia anterior (real ou projetada) + pallet proj. receb. − pallet proj. fat.
-          </p>
+        {!sim && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Veículos = agenda útil × % recebimento (+ remunerado + backlog) · ocupação = dia anterior (real, se houver) + recebidos − expedidos. Campo vazio volta ao calculado.</span>
+            <div className="flex items-center gap-2">
+              {Object.keys(pendFluxo).length > 0 && <span className="font-semibold text-amber-600">Alterações não salvas</span>}
+              <button type="button" className={btn} onClick={desfazer} disabled={cat === "TODAS" || !fluxoEdicao}>
+                <RotateCcw className="h-3.5 w-3.5" /> Desfazer ajustes desta visão
+              </button>
+              <button type="button" className={btnPrimario} onClick={salvarPlanejado} disabled={!Object.keys(pendFluxo).length || salvando}>
+                <Save className="h-3.5 w-3.5" /> Salvar
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {saveStatus && (
-              <span
-                className={`text-[11px] font-medium ${
-                  pendente
-                    ? "text-amber-600 dark:text-amber-400 font-semibold"
-                    : "text-emerald-600 dark:text-emerald-400"
-                }`}
-              >
-                {saveStatus}
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={handleReset}
-              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-medium transition-colors ${
-                isDark
-                  ? "border-slate-700 bg-slate-800/60 text-slate-300 hover:bg-slate-700/60"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <RotateCcw className="h-3 w-3" />
-              Desfazer ajustes desta visão
-            </button>
-
-            <button
-              type="button"
-              disabled={!pendente}
-              onClick={handleSalvar}
-              className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg font-medium text-xs transition-all ${
-                pendente
-                  ? isDark
-                    ? "bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-xs cursor-pointer"
-                    : "bg-slate-900 hover:bg-slate-800 text-white font-semibold shadow-xs cursor-pointer"
-                  : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60"
-              }`}
-            >
-              <Save className="h-3.5 w-3.5" />
-              Salvar
+      {/* LANÇAR REALIZADO */}
+      {reais && (
+        <section className={`${painel} p-4 sm:p-5`}>
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-base font-semibold">Lançar realizado</h2>
+            <span className="text-xs text-slate-500">Últimos 7 dias até hoje · cada dia pode ser lançado uma única vez</span>
+          </div>
+          <div className={`overflow-x-auto rounded-lg border ${isDark ? "border-slate-800" : "border-slate-200"}`}>
+            <table className="w-full min-w-[680px] text-xs tabular-nums">
+              <thead>
+                <tr className={isDark ? "bg-slate-900" : "bg-slate-50"}>
+                  {["Data", "Veículos", "Pallets recebidos", "Caixas fracionadas", "Caixas fechadas", "Situação"].map((t, i) => (
+                    <th key={t} className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${i === 0 ? "text-left" : "text-right"}`}>{t}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...reais.dias].reverse().map((d) => {
+                  const chave = `${cat}|${d.data}`;
+                  const pend = pendReal[chave];
+                  const referencia: Record<string, number | null | undefined> = {
+                    veiculos: d.planejado?.veiculos, pallets: d.planejado?.palletsIn,
+                    caixasFracionadas: d.planejado?.caixasFracionadas, caixasFechadas: d.planejado?.caixasFechadas,
+                  };
+                  return (
+                    <tr key={d.data} className={`border-t ${isDark ? "border-slate-800/70" : "border-slate-100"} ${d.data === hoje ? (isDark ? "bg-sky-950/40" : "bg-sky-50") : ""}`}>
+                      <td className="px-3 py-1.5 text-left whitespace-nowrap">
+                        <span className="mr-1.5 text-[11px] text-slate-500">{WD[parse(d.data).getDay()]}</span>
+                        {dm(d.data)}{d.data === hoje ? " · hoje" : ""}
+                      </td>
+                      {CAMPOS_REAL.map((k) => (
+                        <td key={k} className="px-1.5 py-1 text-right">
+                          {d.realizado ? (
+                            <span className="px-1.5">{nf(d.realizado[k])}</span>
+                          ) : (
+                            <input type="number" min={0} step="any" inputMode="decimal" aria-label={`${k} ${d.data}`}
+                              placeholder={nf(referencia[k])}
+                              value={pend && pend[k] != null ? String(pend[k]) : ""}
+                              onChange={(e) => {
+                                const valor = num(e.target.value);
+                                setPendReal((p) => {
+                                  const atual: Pendente = p[chave] || { categoria: cat, data: d.data, veiculos: null, pallets: null, caixasFracionadas: null, caixasFechadas: null };
+                                  const novo = { ...atual, [k]: valor };
+                                  const copia = { ...p };
+                                  if (CAMPOS_REAL.every((c) => novo[c] == null)) delete copia[chave];
+                                  else copia[chave] = novo;
+                                  return copia;
+                                });
+                              }}
+                              className={inputCel} />
+                          )}
+                        </td>
+                      ))}
+                      <td className="px-3 py-1.5 text-right">
+                        <span className={`inline-block rounded-full px-2 py-0.5 font-semibold ${d.realizado ? "bg-green-500/15 text-green-600" : "bg-amber-500/15 text-amber-600"}`}>
+                          {d.realizado ? "lançado" : "pendente"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Ex.: o realizado de hoje é lançado amanhã. Depois de lançado, não pode ser alterado. Em cinza, a projeção do dia.</span>
+            <button type="button" className={btnPrimario} onClick={lancarRealizado} disabled={!Object.keys(pendReal).length || salvando}>
+              <Save className="h-3.5 w-3.5" /> Lançar realizado
             </button>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
+
+      {/* SIMULAÇÃO */}
+      {sim && simDef && comp && (
+        <PainelSimulacao
+          key={simDef.id}
+          isDark={isDark}
+          painel={painel}
+          campo={campo}
+          btn={btn}
+          btnPrimario={btnPrimario}
+          simDef={simDef}
+          comp={comp}
+          params={cat === "TODAS" ? params : params.filter((p) => fluxosCat.includes(p.fluxo))}
+          cats={cats}
+          categoriaAtual={cat}
+          amanha={amanha}
+          periodo={periodo}
+          onSalvo={async () => {
+            setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
+            setRecarregar((n) => n + 1);
+            notificar("✅ Simulação salva");
+          }}
+          onExcluido={async () => {
+            setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
+            setSim("");
+          }}
+          onErro={(m) => setErro(m)}
+        />
+      )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Componentes auxiliares
+// ---------------------------------------------------------------------------
+function Kpi({ titulo, valor, nota, cor, barra }: { titulo: string; valor: string; nota?: string; cor?: string; barra?: number | null }) {
+  return (
+    <div className="p-4 sm:p-5 flex flex-col justify-between">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{titulo}</span>
+      <div className="mt-2">
+        <div className="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums" style={cor ? { color: cor } : undefined}>{valor}</div>
+        {barra !== undefined && (
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (barra || 0) * 100)}%`, backgroundColor: cor }} />
+          </div>
+        )}
+        {nota && <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{nota}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Legenda({ cor, texto, tracejada }: { cor: string; texto: string; tracejada?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <svg width="18" height="4" aria-hidden="true">
+        <line x1="0" y1="2" x2="18" y2="2" stroke={cor} strokeWidth="3" strokeDasharray={tracejada ? "5 3" : undefined} />
+      </svg>
+      {texto}
+    </span>
+  );
+}
+
+/** Projetada em todos os dias (nos realizados é o que estava projetado); realizada onde há foto; base tracejada na simulação. */
+function Grafico({ dias, base, hoje, isDark, simulacao }: { dias: Dia[]; base?: Dia[]; hoje: string; isDark: boolean; simulacao: boolean }) {
+  const caixa = useRef<HTMLDivElement>(null);
+  const [largura, setLargura] = useState(900);
+  const [dica, setDica] = useState<{ i: number; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const el = caixa.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setLargura(el.clientWidth || 900));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const corReal = isDark ? "#60a5fa" : "#2563eb";
+  const corProj = isDark ? "#f59e0b" : "#d97706";
+  const real = dias.map((d) => (d.tipo === "REALIZADO" ? d.percentualReal : null));
+  const proj = dias.map((d) => d.percentualProjetado);
+  const linhaBase = base ? base.map((d) => (d.data >= hoje ? d.percentualProjetado : null)) : null;
+  const n = dias.length;
+  const W = Math.max(n > 16 ? 1000 : 320, largura);
+  const H = largura < 560 ? 250 : 300;
+  const m = { l: 44, r: 18, t: 14, b: 30 };
+  const vals = [...real, ...proj, ...(linhaBase || [])].filter((v): v is number => v != null);
+  if (!vals.length) return <p className="py-10 text-center text-sm text-slate-500">Sem dados de ocupação no período.</p>;
+  const lo = Math.max(0, Math.floor((Math.min(...vals) * 100 - 6) / 5) * 5);
+  const hi = Math.max(100, Math.ceil((Math.max(...vals) * 100) / 5) * 5);
+  const iw = W - m.l - m.r;
+  const ih = H - m.t - m.b;
+  const x = (i: number) => m.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
+  const y = (v: number) => m.t + ih - ((v * 100 - lo) / (hi - lo)) * ih;
+  const caminho = (vs: (number | null)[]) => {
+    let d = "";
+    let ligado = false;
+    vs.forEach((v, i) => {
+      if (v == null) {
+        ligado = false;
+        return;
+      }
+      d += `${ligado ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      ligado = true;
+    });
+    return d;
+  };
+  const passo = hi - lo > 30 ? 10 : 5;
+  const grades: number[] = [];
+  for (let t = lo; t <= hi; t += passo) grades.push(t);
+  const denso = n > 16;
+  const fmt = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: denso ? 0 : 1, maximumFractionDigits: denso ? 0 : 1 })}%`;
+  const iHoje = dias.findIndex((d) => d.data === hoje);
+  const largBarra = n > 1 ? iw / (n - 1) : iw;
+  const texto = isDark ? "#94a3b8" : "#64748b";
+  const grade = isDark ? "#1e293b" : "#e2e8f0";
+  const fundo = isDark ? "#0f172a" : "#ffffff";
+
+  return (
+    <div ref={caixa} className="relative overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} width={W > largura ? W : "100%"} role="img" aria-label="Ocupação realizada e projetada por dia">
+        {grades.map((t) => (
+          <g key={t}>
+            <line x1={m.l} x2={W - m.r} y1={y(t / 100)} y2={y(t / 100)} stroke={grade} />
+            <text x={m.l - 8} y={y(t / 100) + 4} textAnchor="end" fontSize={11} fill={texto} fontFamily="ui-monospace,monospace">{t}%</text>
+          </g>
+        ))}
+        {lo <= 95 && hi >= 95 && <line x1={m.l} x2={W - m.r} y1={y(0.95)} y2={y(0.95)} stroke="#dc2626" strokeDasharray="4 4" opacity={0.6} />}
+        {dias.map((d, i) => (
+          <text key={d.data} x={x(i)} y={H - 10} textAnchor="middle" fontSize={denso ? 10 : 11}
+            fill={d.data === hoje ? (isDark ? "#f1f5f9" : "#0f172a") : texto} fontWeight={d.data === hoje ? 600 : 400}>
+            {dm(d.data)}
+          </text>
+        ))}
+        {iHoje >= 0 && (
+          <g>
+            <line x1={x(iHoje)} x2={x(iHoje)} y1={m.t} y2={m.t + ih} stroke={texto} strokeDasharray="2 3" />
+            <text x={x(iHoje) + 4} y={m.t + 10} fontSize={10} fill={texto} fontFamily="ui-monospace,monospace">HOJE</text>
+          </g>
+        )}
+        {linhaBase && <path d={caminho(linhaBase)} fill="none" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" />}
+        <path d={caminho(proj)} fill="none" stroke={corProj} strokeWidth={2.25} strokeLinejoin="round" />
+        <path d={caminho(real)} fill="none" stroke={corReal} strokeWidth={2.25} strokeLinejoin="round" />
+        {dias.map((d, i) => {
+          const temReal = real[i] != null;
+          const temProj = proj[i] != null;
+          const projAcima = !temReal || (temProj && (proj[i] as number) >= (real[i] as number));
+          const ancora = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+          const rotulo = (v: number, acima: boolean, cor: string) => (
+            <g>
+              <circle cx={x(i)} cy={y(v)} r={denso ? 2.4 : 3.4} fill={cor} />
+              <text x={x(i)} y={y(v) + (acima ? -8 : 16)} textAnchor={ancora} fontSize={denso ? 10 : 11} fontWeight={600}
+                fill={cor} stroke={fundo} strokeWidth={3} paintOrder="stroke">{fmt(v)}</text>
+            </g>
+          );
+          return (
+            <g key={d.data}>
+              {temProj && rotulo(proj[i] as number, projAcima, corProj)}
+              {temReal && rotulo(real[i] as number, !projAcima || !temProj, corReal)}
+            </g>
+          );
+        })}
+        {dias.map((d, i) => (
+          <rect key={d.data} x={x(i) - largBarra / 2} y={m.t} width={largBarra} height={ih} fill="transparent"
+            onMouseEnter={() => setDica({ i, x: x(i), y: y(Math.max(real[i] ?? 0, proj[i] ?? 0, linhaBase?.[i] ?? 0) || lo / 100) })}
+            onMouseLeave={() => setDica(null)} />
+        ))}
+      </svg>
+      {dica && (() => {
+        const d = dias[dica.i];
+        const partes = [dm(d.data)];
+        if (proj[dica.i] != null) partes.push(`${simulacao && d.data > hoje ? "simulada" : "proj."} ${pf(proj[dica.i])} (${nf(d.ocupacaoProjetada)})`);
+        if (real[dica.i] != null) partes.push(`real ${pf(real[dica.i])} (${nf(d.ocupacaoReal)})`);
+        if (linhaBase?.[dica.i] != null && d.data > hoje) partes.push(`base ${pf(linhaBase[dica.i])}`);
+        const escala = (caixa.current?.querySelector("svg")?.getBoundingClientRect().width || W) / W;
+        return (
+          <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow-lg dark:bg-slate-100 dark:text-slate-900"
+            style={{ left: dica.x * escala, top: Math.max(dica.y * escala - 12, 28) }}>
+            {partes.join("  ·  ")}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+interface PainelSimulacaoProps {
+  isDark: boolean;
+  painel: string;
+  campo: string;
+  btn: string;
+  btnPrimario: string;
+  simDef: SimulacaoDetalhe;
+  comp: Comparativo;
+  params: ParametroFluxo[];
+  cats: Categoria[];
+  categoriaAtual: string;
+  amanha: string;
+  periodo: [string, string];
+  onSalvo: () => void;
+  onExcluido: () => void;
+  onErro: (msg: string) => void;
+}
+
+/** Ajustes da simulação: parâmetros por fluxo, variação % de agenda/caixas e posições extras (de amanhã em diante). */
+function PainelSimulacao(p: PainelSimulacaoProps) {
+  const def = p.simDef.definicao;
+  const [nome, setNome] = useState(p.simDef.nome);
+  const [descricao, setDescricao] = useState(p.simDef.descricao || "");
+  const [pars, setPars] = useState<Record<string, Record<string, string>>>(() => {
+    const o: Record<string, Record<string, string>> = {};
+    for (const [f, aj] of Object.entries(def.parametrosFluxo || {})) {
+      o[f] = {};
+      for (const c of PAR_CAMPOS) {
+        const v = aj?.[c];
+        o[f][c] = v == null ? "" : String(PCT_CAMPOS.has(c) ? Math.round(v * 10000) / 100 : v);
+      }
+    }
+    return o;
+  });
+  const inicioPadrao = p.periodo[0] > p.amanha ? p.periodo[0] : p.amanha;
+  const [variacoes, setVariacoes] = useState<Variacao[]>(def.variacoes || []);
+  const [extras, setExtras] = useState<Extra[]>(def.capacidadeExtra || []);
+  const [salvando, setSalvando] = useState(false);
+
+  const salvar = async () => {
+    setSalvando(true);
+    try {
+      const parametrosFluxo: Record<string, Record<string, number | null>> = { ...(def.parametrosFluxo || {}) };
+      for (const [f, campos] of Object.entries(pars)) {
+        const aj: Record<string, number | null> = {};
+        for (const c of PAR_CAMPOS) {
+          const s = (campos[c] ?? "").trim();
+          aj[c] = s === "" ? null : PCT_CAMPOS.has(c) ? Number(s.replace(",", ".")) / 100 : Number(s.replace(",", "."));
+        }
+        if (Object.values(aj).some((v) => v != null)) parametrosFluxo[f] = aj;
+        else delete parametrosFluxo[f];
+      }
+      const definicao = { ...def, parametrosFluxo, variacoes, capacidadeExtra: extras };
+      await chamar(`/simulacoes/${p.simDef.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ nome: nome.trim() || p.simDef.nome, descricao, definicao }),
+      });
+      p.onSalvo();
+    } catch (e: any) {
+      p.onErro(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const excluir = async () => {
+    if (!window.confirm(`Excluir a simulação "${p.simDef.nome}"? Não dá para desfazer.`)) return;
+    try {
+      await chamar(`/simulacoes/${p.simDef.id}`, { method: "DELETE" });
+      p.onExcluido();
+    } catch (e: any) {
+      p.onErro(e.message);
+    }
+  };
+
+  const r = p.comp.resumo;
+  const cartao = (titulo: string, base: number | null | undefined, simulado: number | null | undefined, fmt: (v: number | null | undefined) => string, pct: boolean) => {
+    const delta = base != null && simulado != null ? simulado - base : null;
+    return (
+      <div className={`rounded-lg border px-3 py-2 ${p.isDark ? "border-slate-800 bg-slate-950/40" : "border-slate-200 bg-white"}`}>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{titulo}</span>
+        <div className="text-xl font-semibold tabular-nums">{fmt(simulado)}</div>
+        <span className="text-[11px] text-slate-500">
+          base {fmt(base)}
+          {delta ? (
+            <span className={delta > 0 ? "text-red-500" : "text-green-600"}>
+              {" "}({delta > 0 ? "+" : ""}{pct ? `${(delta * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.` : nf(delta)})
+            </span>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+  const celInput = `w-full min-w-[70px] rounded-md border px-2 py-1 text-xs outline-hidden ${
+    p.isDark ? "bg-slate-950 border-slate-700 text-slate-100" : "bg-white border-slate-200"
+  }`;
+
+  return (
+    <section className={`${p.painel} p-4 sm:p-5 border-violet-500/60`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Simulação</h2>
+        <div className="flex gap-2">
+          <button type="button" className={`${p.btn} text-red-500`} onClick={excluir}><Trash2 className="h-3.5 w-3.5" /> Excluir</button>
+          <button type="button" className={p.btnPrimario} onClick={salvar} disabled={salvando}><Save className="h-3.5 w-3.5" /> Salvar simulação</button>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Nome</span>
+          <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={p.campo} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Descrição</span>
+          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={1000} className={p.campo} />
+        </label>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cartao("% fim do período", r.percentualFinalBase, r.percentualFinalSimulado, pf, true)}
+        {cartao("Ocupação fim do período", r.ocupacaoFinalBase, r.ocupacaoFinalSimulada, nf, false)}
+        {cartao("Pico projetado", r.picoBase?.percentual, r.picoSimulado?.percentual, pf, true)}
+        {cartao("Dias críticos (≥95%)", r.diasCriticosBase, r.diasCriticosSimulado, (v) => (v == null ? "—" : String(v)), false)}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">A simulação vale de amanhã em diante e não muda a base oficial nem o que já aconteceu.</p>
+
+      <h3 className="mt-5 mb-2 text-sm font-semibold">Parâmetros por fluxo <span className="font-normal text-slate-500">(vazio = valor oficial)</span></h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+              {["Fluxo", "% recebimento", "Pallets / veículo", "% expedição", "Cx/pallet fracionado", "Cx/pallet fechado"].map((t) => (
+                <th key={t} className="px-2 py-1.5 text-left font-semibold">{t}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {p.params.map((pf_) => (
+              <tr key={pf_.fluxo}>
+                <td className="px-2 py-1">{pf_.nome}</td>
+                {PAR_CAMPOS.map((c) => (
+                  <td key={c} className="px-2 py-1">
+                    <input type="number" step="any" className={celInput}
+                      placeholder={PCT_CAMPOS.has(c) ? (pf_[c] * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : String(pf_[c])}
+                      value={pars[pf_.fluxo]?.[c] ?? ""}
+                      onChange={(e) => setPars((o) => ({ ...o, [pf_.fluxo]: { ...(o[pf_.fluxo] || {}), [c]: e.target.value } }))} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="mt-5 mb-2 text-sm font-semibold">Variação percentual de agenda / caixas</h3>
+      <div className="space-y-2">
+        {variacoes.map((v, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+            <select value={v.campo} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, campo: e.target.value } : x)))}>
+              <option value="CAIXAS">Caixas (frac. + fech.)</option>
+              <option value="CAIXAS_FRACIONADAS">Caixas fracionadas</option>
+              <option value="CAIXAS_FECHADAS">Caixas fechadas</option>
+              <option value="AGENDA">Agenda (veículos)</option>
+            </select>
+            <input type="date" min={p.amanha} value={v.inicio} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, inicio: e.target.value } : x)))} />
+            <span>a</span>
+            <input type="date" min={p.amanha} value={v.fim} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, fim: e.target.value } : x)))} />
+            <input type="number" step="any" value={Math.round(v.percentual * 10000) / 100} className={`${celInput} w-24`}
+              onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, percentual: Number(e.target.value) / 100 } : x)))} />
+            <span>%</span>
+            <button type="button" className={p.btn} onClick={() => setVariacoes((l) => l.filter((_, j) => j !== i))} aria-label="Remover variação"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        ))}
+        <button type="button" className={p.btn} onClick={() => setVariacoes((l) => [...l, { campo: "CAIXAS", inicio: inicioPadrao, fim: p.periodo[1] > inicioPadrao ? p.periodo[1] : inicioPadrao, percentual: 0.1 }])}>
+          <Plus className="h-3.5 w-3.5" /> Variação
+        </button>
+      </div>
+
+      <h3 className="mt-5 mb-2 text-sm font-semibold">Posições extras de capacidade</h3>
+      <div className="space-y-2">
+        {extras.map((x, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+            <select value={x.categoria} className={`${celInput} w-auto`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, categoria: e.target.value } : y)))}>
+              {p.cats.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}
+            </select>
+            <span>a partir de</span>
+            <input type="date" min={p.amanha} value={x.aPartirDe} className={`${celInput} w-auto`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, aPartirDe: e.target.value } : y)))} />
+            <input type="number" step="any" value={x.posicoes} className={`${celInput} w-28`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, posicoes: Number(e.target.value) } : y)))} />
+            <span>posições</span>
+            <button type="button" className={p.btn} onClick={() => setExtras((l) => l.filter((_, j) => j !== i))} aria-label="Remover posições"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        ))}
+        <button type="button" className={p.btn}
+          onClick={() => setExtras((l) => [...l, { categoria: p.categoriaAtual === "TODAS" ? p.cats[0]?.codigo || "COMPLEMENTAR" : p.categoriaAtual, aPartirDe: inicioPadrao, posicoes: 0 }])}>
+          <Plus className="h-3.5 w-3.5" /> Posições
+        </button>
+      </div>
+    </section>
   );
 }
