@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -43,32 +43,63 @@ async function fetchFromApi(path) {
   return res.json();
 }
 
-const T = {
-  bg: "#12161A",
-  panel: "#1A2027",
-  barra1: "#c7d4d7",
-  barra2: "#5f969b",
-  panelAlt: "#1F262D",
-  border: "#2A323A",
-  borderLight: "#3A434C",
-  textPrimary: "#EDEFF2",
-  textSecondary: "#93A0AC",
-  textTertiary: "#5C6871",
-  amber: "#FF8A3D",
-  amberDim: "#7A4C28",
-  teal: "#3FD9C4",
-  tealDim: "#215F56",
-  blue: "#5B8DEF",
-  blueDim: "#2C4577",
-  violet: "#9B8CF0",
-  green: "#6FCF97",
-  red: "#EB5757",
-  black: "0000000"
+// Cores no padrão do Painel (paleta slate, destaque azul), nas versões escura e clara.
+// "accent" é o destaque da interface; as demais cores são das séries dos gráficos.
+const TEMAS = {
+  dark: {
+    bg: "#070b14",
+    panel: "#0f172a",
+    panelAlt: "#0b1220",
+    border: "#1e293b",
+    borderLight: "#334155",
+    textPrimary: "#f1f5f9",
+    textSecondary: "#94a3b8",
+    textTertiary: "#64748b",
+    accent: "#3b82f6",
+    accentText: "#ffffff",
+    barra1: "#64748b",
+    barra2: "#3b82f6",
+    amber: "#f59e0b",
+    amberDim: "#78350f",
+    teal: "#14b8a6",
+    tealDim: "#134e4a",
+    blue: "#60a5fa",
+    blueDim: "#1e3a8a",
+    violet: "#a78bfa",
+    green: "#22c55e",
+    red: "#ef4444",
+    black: "#000000",
+    cursor: "rgba(255,255,255,0.04)",
+  },
+  light: {
+    bg: "#f8fafc",
+    panel: "#ffffff",
+    panelAlt: "#f1f5f9",
+    border: "#e2e8f0",
+    borderLight: "#cbd5e1",
+    textPrimary: "#0f172a",
+    textSecondary: "#475569",
+    textTertiary: "#94a3b8",
+    accent: "#2563eb",
+    accentText: "#ffffff",
+    barra1: "#94a3b8",
+    barra2: "#2563eb",
+    amber: "#d97706",
+    amberDim: "#fde68a",
+    teal: "#0d9488",
+    tealDim: "#ccfbf1",
+    blue: "#3b82f6",
+    blueDim: "#dbeafe",
+    violet: "#7c3aed",
+    green: "#16a34a",
+    red: "#dc2626",
+    black: "#000000",
+    cursor: "rgba(15,23,42,0.05)",
+  },
 };
 
-const FONT_IMPORT = `
-@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-`;
+// Tema em uso: definido pelo PainelPFA a cada renderização (os componentes abaixo leem T ao renderizar).
+let T = TEMAS.dark;
 
 /* ============================================================================
    GERAÇÃO DE DADOS MOCK — mesmo formato dos endpoints reais, agora por dia
@@ -392,20 +423,20 @@ function MetricCard({ label1, value1, label2, value2, sub, accent = T.teal }) {
       }}
     >
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: accent }} />
-      <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textSecondary, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textSecondary, fontFamily: "var(--font-sans)", fontWeight: 500 }}>
         {label1}
       </div>
-      <div style={{ fontSize: 26, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, color: T.textPrimary, marginTop: 6 }}>
+      <div style={{ fontSize: 26, fontFamily: "var(--font-mono)", fontWeight: 600, color: T.textPrimary, marginTop: 6 }}>
         {value1}
       </div>
       <div style={{ height: 1, background: T.border, margin: "12px 0" }} />
-      <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textSecondary, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textSecondary, fontFamily: "var(--font-sans)", fontWeight: 500 }}>
         {label2}
       </div>
-      <div style={{ fontSize: 26, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, color: T.textPrimary, marginTop: 6 }}>
+      <div style={{ fontSize: 26, fontFamily: "var(--font-mono)", fontWeight: 600, color: T.textPrimary, marginTop: 6 }}>
         {value2}
       </div>
-      {sub && <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2, fontFamily: "'Inter', sans-serif" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2, fontFamily: "var(--font-sans)" }}>{sub}</div>}
     </div>
   );
 }
@@ -413,7 +444,7 @@ function MetricCard({ label1, value1, label2, value2, sub, accent = T.teal }) {
 function Select({ label, value, onChange, options }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 150 }}>
-      <label style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textTertiary, fontFamily: "'Inter', sans-serif" }}>
+      <label style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textTertiary, fontFamily: "var(--font-sans)" }}>
         {label}
       </label>
       <select
@@ -424,13 +455,13 @@ function Select({ label, value, onChange, options }) {
           border: `1px solid ${T.border}`,
           borderRadius: 3,
           color: T.textPrimary,
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 13,
           padding: "8px 10px",
           outline: "none",
           cursor: "pointer",
         }}
-        onFocus={(e) => (e.target.style.borderColor = T.amber)}
+        onFocus={(e) => (e.target.style.borderColor = T.accent)}
         onBlur={(e) => (e.target.style.borderColor = T.border)}
       >
         {options.map((o) => (
@@ -470,7 +501,7 @@ function MultiSelect({ label, values, onChange, options, allLabel = "Todos" }) {
 
   return (
     <div ref={ref} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 170, position: "relative" }}>
-      <label style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textTertiary, fontFamily: "'Inter', sans-serif" }}>
+      <label style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textTertiary, fontFamily: "var(--font-sans)" }}>
         {label}
       </label>
       <button
@@ -478,10 +509,10 @@ function MultiSelect({ label, values, onChange, options, allLabel = "Todos" }) {
         onClick={() => setOpen((o) => !o)}
         style={{
           background: T.panelAlt,
-          border: `1px solid ${open ? T.amber : T.border}`,
+          border: `1px solid ${open ? T.accent : T.border}`,
           borderRadius: 3,
           color: T.textPrimary,
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: 13,
           padding: "8px 10px",
           cursor: "pointer",
@@ -512,59 +543,21 @@ function MultiSelect({ label, values, onChange, options, allLabel = "Todos" }) {
         >
           <div
             onClick={() => onChange([])}
-            style={{ padding: "6px 8px", cursor: "pointer", fontSize: 12, color: values.length === 0 ? T.amber : T.textSecondary, fontFamily: "'Inter', sans-serif" }}
+            style={{ padding: "6px 8px", cursor: "pointer", fontSize: 12, color: values.length === 0 ? T.accent : T.textSecondary, fontFamily: "var(--font-sans)" }}
           >
             {allLabel}
           </div>
           {options.map((o) => (
             <label
               key={o.value}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", cursor: "pointer", fontSize: 13, color: T.textPrimary, fontFamily: "'IBM Plex Mono', monospace" }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", cursor: "pointer", fontSize: 13, color: T.textPrimary, fontFamily: "var(--font-mono)" }}
             >
-              <input type="checkbox" checked={values.includes(o.value)} onChange={() => toggle(o.value)} style={{ accentColor: T.amber }} />
+              <input type="checkbox" checked={values.includes(o.value)} onChange={() => toggle(o.value)} style={{ accentColor: T.accent }} />
               {o.label}
             </label>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// Toggle pra alternar entre "Planejamento Fim de Ano" (dados propostos/planejados,
-// endpoints antigos) e "Este Ano" (dados reais do ano corrente, endpoint novo). Troca o dataset
-// inteiro, não só um filtro. Aceita `vertical` pra empilhar os dois botões no menu lateral.
-function ModeToggle({ mode, onChange, vertical = false }) {
-  const item = (value, label) => {
-    const active = mode === value;
-    return (
-      <button
-        key={value}
-        onClick={() => onChange(value)}
-        style={{
-          background: active ? T.amber : "transparent",
-          color: active ? "#1A1206" : T.textSecondary,
-          border: `1px solid ${active ? T.amber : T.border}`,
-          borderRadius: 3,
-          padding: "7px 14px",
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 12,
-          fontWeight: 600,
-          letterSpacing: "0.02em",
-          cursor: "pointer",
-          transition: "all 0.15s ease",
-          width: vertical ? "100%" : undefined,
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-  return (
-    <div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: 6 }}>
-      {item("planejamento", "Planejamento Fim de Ano")}
-      {item("esteAno", "Este Ano")}
-      {item("semEdicao", "Faturamento sem Edição")}
     </div>
   );
 }
@@ -589,7 +582,7 @@ function ChartPanel({ title, children, height = null, headerRight }) {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap", flexShrink: 0 }}>
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.05em", textTransform: "uppercase", color: T.textSecondary, fontWeight: 500 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 13, letterSpacing: "0.05em", textTransform: "uppercase", color: T.textSecondary, fontWeight: 500 }}>
           {title}
         </div >
         {headerRight}
@@ -602,7 +595,7 @@ function ChartPanel({ title, children, height = null, headerRight }) {
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div style={{ background: T.panelAlt, border: `1px solid ${T.borderLight}`, borderRadius: 3, padding: "8px 12px", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
+    <div style={{ background: T.panelAlt, border: `1px solid ${T.borderLight}`, borderRadius: 3, padding: "8px 12px", fontFamily: "var(--font-mono)", fontSize: 12 }}>
       <div style={{ color: T.textSecondary, marginBottom: 4 }}>{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color || T.textPrimary }}>
@@ -617,7 +610,7 @@ function CustomTooltip({ active, payload, label }) {
 // (dentro da capacidade vs. acima da capacidade). Usada como headerRight do painel.
 function LegendaCapacidade() {
   const item = (cor, texto) => (
-    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.textSecondary, fontFamily: "'Inter', sans-serif" }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.textSecondary, fontFamily: "var(--font-sans)" }}>
       <span style={{ width: 9, height: 9, borderRadius: 2, background: cor, display: "inline-block" }} />
       {texto}
     </span>
@@ -630,7 +623,7 @@ function LegendaCapacidade() {
   );
 }
 
-const ORIGEM_COLORS = [T.blue, "#8A94A6", T.amber, T.teal, T.violet, T.green];
+const origemCores = () => [T.blue, T.barra1, T.amber, T.teal, T.violet, T.green];
 
 // Tick de dois níveis para o gráfico "Encaixe entre CDs": linha de cima = Max/Média,
 // linha de baixo = nome do dia da semana (só desenhada sob a barra "Max" de cada par,
@@ -639,11 +632,11 @@ function EncaixeTick({ x, y, payload }) {
   const [dia, tipo] = String(payload.value).split("__");
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={14} textAnchor="middle" fill={T.textSecondary} fontSize={10} fontFamily="'IBM Plex Mono', monospace">
+      <text x={0} y={14} textAnchor="middle" fill={T.textSecondary} fontSize={10} fontFamily="var(--font-mono)">
         {tipo}
       </text>
       {tipo === "Max" && (
-        <text x={38} y={30} textAnchor="middle" fill={T.textTertiary} fontSize={11} fontFamily="'Inter', sans-serif" style={{ textTransform: "capitalize" }}>
+        <text x={38} y={30} textAnchor="middle" fill={T.textTertiary} fontSize={11} fontFamily="var(--font-sans)" style={{ textTransform: "capitalize" }}>
           {dia}
         </text>
       )}
@@ -669,7 +662,7 @@ function QuartilLabel({ viewBox, value, cor }) {
         fill="#FFFFFF"
         fontSize={11}
         fontWeight={600}
-        fontFamily="'Inter', sans-serif"
+        fontFamily="var(--font-sans)"
       >
         {value}
       </text>
@@ -677,7 +670,7 @@ function QuartilLabel({ viewBox, value, cor }) {
   );
 }
 
-const axisStyle = { fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", fill: T.textTertiary };
+const axisStyle = () => ({ fontSize: 11, fontFamily: "var(--font-mono)", fill: T.textTertiary });
 const MES_NOMES = {
   1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
   7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
@@ -691,7 +684,7 @@ function dayAxisProps(len) {
   const interval = len <= 31 ? 0 : Math.max(1, Math.ceil(len / 22) - 1);
   return {
     dataKey: "dia",
-    tick: axisStyle,
+    tick: axisStyle(),
     axisLine: { stroke: T.border },
     tickLine: false,
     angle: -40,
@@ -704,37 +697,23 @@ function dayAxisProps(len) {
 /* ============================================================================
    APP
    ========================================================================== */
-// Processo escolhido no menu PFA do Painel -> aba interna (a Expedição do modo "sem edição" usa os dados do CSV)
-const ABA_DO_PROCESSO = { recebimento: "recebimento", importacao: "importacao", expedicao: "faturamento", transferencia: "transferencia" };
-const PROCESSO_DA_ABA = { recebimento: "recebimento", importacao: "importacao", faturamento: "expedicao", faturamentoReal: "expedicao", transferencia: "transferencia" };
+export const NOMES_MODO = { planejamento: "Planejamento Fim de Ano", esteAno: "Este Ano", semEdicao: "Faturamento sem Edição" };
+const NOMES_ABA = { recebimento: "Recebimento", importacao: "Importação", faturamento: "Expedição", faturamentoReal: "Expedição", transferencia: "Transferência" };
 
 /**
- * Painel PFA (planejamento de final de ano). O processo (Recebimento, Importação, Expedição, Transferência)
- * vem do sub-menu PFA do Painel; a troca de modo que esconde um processo avisa o menu por onProcessoChange.
+ * Painel PFA (planejamento de final de ano). Segue o tema claro/escuro do Painel.
+ * O modo (Planejamento Fim de Ano, Este Ano, Faturamento sem Edição) e o processo
+ * (Recebimento, Importação, Expedição, Transferência) são escolhidos no menu PFA do Painel.
  */
-export default function PainelPFA({ processo = "recebimento", onProcessoChange }) {
-  const [viewMode, setViewMode] = useState("planejamento"); // 'planejamento' | 'esteAno' | 'semEdicao'
+export default function PainelPFA({ theme = "dark", modo = "planejamento", aba = "recebimento" }) {
+  T = TEMAS[theme === "light" ? "light" : "dark"];
+  const viewMode = modo; // 'planejamento' | 'esteAno' | 'semEdicao'
 
   const { data, loading, error, reload } = useDashboardData();
   const { rows: esteAnoRows, loading: esteAnoLoading, error: esteAnoError, reload: esteAnoReload } = useEsteAnoData();
 
-  const [tab, setTab] = useState(ABA_DO_PROCESSO[processo] || "recebimento");
+  const tab = aba;
 
-  // Menu -> painel: importação e transferência só existem no modo Planejamento; o modo "sem edição" só tem Expedição
-  useEffect(() => {
-    setViewMode((modo) => {
-      if ((processo === "importacao" || processo === "transferencia") && modo !== "planejamento") return "planejamento";
-      if (modo === "semEdicao" && processo !== "expedicao") return "planejamento";
-      return modo;
-    });
-    setTab((atual) => (processo === "expedicao" && atual === "faturamentoReal" ? atual : ABA_DO_PROCESSO[processo] || "recebimento"));
-  }, [processo]);
-
-  // Painel -> menu: quando a troca de modo muda a aba, o menu acompanha
-  useEffect(() => {
-    const p = PROCESSO_DA_ABA[tab];
-    if (p && p !== processo && onProcessoChange) onProcessoChange(p);
-  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cd, setCd] = useState("all");
   const [categoria, setCategoria] = useState("all");
   const [mes, setMes] = useState("all");
@@ -742,24 +721,6 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
   const [tipoDemanda, setTipoDemanda] = useState("all"); // filtro exclusivo da aba Faturamento (modo Planejamento)
   const [tipoFatReal, setTipoFatReal] = useState("all"); // filtro exclusivo da aba Faturamento Real: 'all' | 'Fracionado' | 'Fechado'
 
-  // No modo "Este Ano" só existem as abas Recebimento e Expedição por enquanto
-  // (importação/transferência ainda não têm endpoint real). Se o usuário estava
-  // numa dessas abas e troca de modo, volta pra Recebimento.
-  // O modo "Faturamento sem Edição" tem só a aba Expedição (dados do CSV, tab interna "faturamentoReal");
-  // ao sair dele, volta pra Expedição do modo escolhido.
-  const handleModeChange = useCallback(
-    (nextMode) => {
-      setViewMode(nextMode);
-      if (nextMode === "semEdicao") {
-        setTab("faturamentoReal");
-      } else if (tab === "faturamentoReal") {
-        setTab("faturamento");
-      } else if (nextMode === "esteAno" && (tab === "importacao" || tab === "transferencia")) {
-        setTab("recebimento");
-      }
-    },
-    [tab]
-  );
 
   // Junta as 4 listas (recebimento, importação, faturamento, transferência) pra descobrir
   // quais CDs, categorias e meses realmente existem no JSON retornado pelo backend.
@@ -1240,14 +1201,14 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
 
   if (activeLoading) {
     return (
-      <div style={{ background: T.bg, color: T.textSecondary, padding: 40, fontFamily: "'Inter', sans-serif", textAlign: "center" }}>
+      <div style={{ background: T.bg, color: T.textSecondary, padding: 40, fontFamily: "var(--font-sans)", textAlign: "center" }}>
         Carregando dados...
       </div>
     );
   }
   if (activeError) {
     return (
-      <div style={{ background: T.bg, color: T.red, padding: 40, fontFamily: "'Inter', sans-serif" }}>
+      <div style={{ background: T.bg, color: T.red, padding: 40, fontFamily: "var(--font-sans)" }}>
         <p>Erro ao carregar dados: {activeError}</p>
         <button onClick={activeReload} style={{ marginTop: 8, background: T.panel, border: `1px solid ${T.border}`, color: T.textPrimary, padding: "8px 14px", borderRadius: 3, cursor: "pointer" }}>
           Tentar novamente
@@ -1267,73 +1228,32 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
   const semMesSelecionado = tab === "transferencia" ? mesesTransferencia.length === 0 : mes === "all";
 
   return (
-    <div style={{ background: T.bg, height: "100%", minHeight: 640, width:"100%", fontFamily: "'Inter', sans-serif", display: "flex", overflow: "hidden", boxSizing: "border-box" }}>
-      <style>{FONT_IMPORT}</style>
+    <div style={{ background: T.bg, height: "100%", minHeight: 640, width:"100%", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden", boxSizing: "border-box" }}>
 
-      {/* SIDEBAR — menu vertical: título, toggle de modo e as abas empilhadas.
-          Fica fixo na lateral (não rola com o conteúdo), então os gráficos
-          aparecem logo abaixo dos filtros, sem precisar descer a página pra achar o menu. */}
-      <div
-        style={{
-          width: 232,
-          flexShrink: 0,
-          borderRight: `1px solid ${T.border}`,
-          display: "flex",
-          flexDirection: "column",
-          padding: "22px 0",
-          position: "sticky",
-          top: 0,
-          alignSelf: "flex-start",
-          height: "100%",
-          overflowY: "auto",
-        }}
-      >
-        <div style={{ padding: "0 18px 18px" }}>
-          <h1
-            style={{
-              fontFamily: "'Oswald', sans-serif",
-              fontSize: 19,
-              fontWeight: 600,
-              color: T.textPrimary,
-              margin: 0,
-              letterSpacing: "0.01em",
-              lineHeight: 1.3,
-            }}
-          >
-            PLANEJAMENTO
-            <br />
-            DE FINAL DE ANO
-          </h1>
-        </div>
-
-        <div style={{ padding: "0 14px 18px" }}>
-          <ModeToggle mode={viewMode} onChange={handleModeChange} vertical />
-        </div>
-
-        <div style={{ height: 1, background: T.border, margin: "0 18px 14px" }} />
-
-        {/* O processo (Recebimento, Importação, Expedição, Transferência) é escolhido no sub-menu PFA do Painel */}
-        <div style={{ padding: "0 18px", fontFamily: "'Inter', sans-serif" }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textTertiary, marginBottom: 4 }}>
-            Processo
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: T.textPrimary }}>
-            {{ recebimento: "Recebimento", importacao: "Importação", faturamento: "Expedição", faturamentoReal: "Expedição", transferencia: "Transferência" }[tab]}
-          </div>
-          <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 4, lineHeight: 1.4 }}>
-            {isSemEdicao
-              ? "Neste modo só há a Expedição (dados do CSV)."
-              : isEsteAno
-              ? "Neste modo: Recebimento e Expedição."
-              : "Troque o processo pelo menu PFA."}
-          </div>
-        </div>
-      </div>
 
       {/* CONTEÚDO PRINCIPAL — coluna de altura total: filtros ficam com altura natural (flexShrink: 0)
           e o wrapper logo abaixo (flex: 1) ocupa todo o espaço restante da tela, empurrando o
           gráfico a esticar até a borda inferior em vez de sobrar área vazia ou precisar rolar. */}
       <div style={{ flex: 1, minWidth: 0, height: "100%", padding: "22px 28px 20px", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
+        {/* TÍTULO */}
+        <div style={{ marginBottom: 16, flexShrink: 0 }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 24,
+              fontWeight: 600,
+              color: T.textPrimary,
+              margin: 0,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Planejamento de final de ano
+          </h1>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: T.textSecondary }}>
+            PFA · {NOMES_MODO[viewMode]} · {NOMES_ABA[tab]}
+          </p>
+        </div>
+
         {/* FILTROS */}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", background: T.panelAlt, border: `1px solid ${T.border}`, borderRadius: 4, padding: "14px 18px", marginBottom: 18, flexShrink: 0 }}>
           <Select label="Centro de distribuição" value={cd} onChange={setCd} options={cdOptions} />
@@ -1383,14 +1303,14 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                 padding: "8px 12px",
                 fontSize: 12,
                 cursor: "pointer",
-                fontFamily: "'Inter', sans-serif",
+                fontFamily: "var(--font-sans)",
               }}
             >
               Limpar filtros
             </button>
           )}
           {semMesSelecionado && (
-            <div style={{ alignSelf: "flex-end", fontSize: 11, color: T.textTertiary, fontFamily: "'Inter', sans-serif", paddingBottom: 8 }}>
+            <div style={{ alignSelf: "flex-end", fontSize: 11, color: T.textTertiary, fontFamily: "var(--font-sans)", paddingBottom: 8 }}>
               Dica: selecione um mês para ver os dias com mais detalhe.
             </div>
           )}
@@ -1410,9 +1330,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={esteAnoRecebimentoPorDia} barGap={1}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(esteAnoRecebimentoPorDia.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Bar dataKey="CapacidadeInbound" name="Capacidade" stackId="capacidade" fill={T.barra1}>
                     <LabelList dataKey="CapacidadeInbound" position="center" fill={T.black} fontSize={11}
                       formatter={(v) => Number(v).toLocaleString("pt-BR")} angle={-90}/>
@@ -1453,9 +1373,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={esteAnoExpedicaoChart}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(esteAnoExpedicaoChart.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Bar dataKey="Realizado" fill={T.barra2} radius={[3, 3, 0, 0]}>
                       <LabelList
                         dataKey="Realizado"
@@ -1491,9 +1411,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={recebimentoPorDia} barGap={1}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(recebimentoPorDia.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Line type="monotone" dataKey="Capacidade" stroke={T.amber} strokeWidth={2} dot={false} />
                     <Bar dataKey="Agendados" fill={T.barra1} radius={[3, 3, 0, 0]}><LabelList dataKey="Agendados" position="top" fill={T.barra1} fontSize={13}/></Bar>
                     <Bar dataKey="Recebidos" fill={T.barra2} radius={[3, 3, 0, 0]}><LabelList dataKey="Recebidos" position="top" fill={T.barra2} fontSize={13}/></Bar>
@@ -1516,9 +1436,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={importacaoPorDia}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(importacaoPorDia.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Bar dataKey="Importado" fill={T.barra2} radius={[3, 3, 0, 0]}><LabelList dataKey="Importado" position="top" fill={T.textPrimary} fontSize={13}/></Bar>
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1547,9 +1467,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={faturamentoPorDia}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(faturamentoPorDia.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Bar dataKey="Faturado" radius={[3, 3, 0, 0]}>
                       <LabelList
                         dataKey="Faturado"
@@ -1591,9 +1511,9 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <ComposedChart data={faturamentoRealPorDia}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis {...dayAxisProps(faturamentoRealPorDia.length)} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: T.textSecondary }} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: T.cursor }} />
+                    <Legend wrapperStyle={{ fontSize: 12, fontFamily: "var(--font-sans)", color: T.textSecondary }} />
                     <Bar dataKey="Faturado" radius={[3, 3, 0, 0]}>
                       <LabelList
                         dataKey="Faturado"
@@ -1636,7 +1556,7 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                         border: `1px solid ${T.border}`,
                         borderRadius: 3,
                         color: T.textPrimary,
-                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontFamily: "var(--font-mono)",
                         fontSize: 12,
                         padding: "5px 8px",
                         cursor: "pointer",
@@ -1655,14 +1575,14 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                   <BarChart data={encaixeData.rows} barGap={0} barCategoryGap="18%" margin={{ top: 8, right: 115, bottom: 60 }}>
                     <CartesianGrid stroke={T.border} vertical={false} />
                     <XAxis dataKey="grupo" tick={<EncaixeTick />} axisLine={{ stroke: T.border }} tickLine={false} interval={0} />
-                    <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisStyle()} axisLine={false} tickLine={false} />
                     <Tooltip
                       content={<CustomTooltip />}
-                      cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                      cursor={{ fill: T.cursor }}
                       labelFormatter={(label) => String(label).split("__").reverse().join(" — ")}
                     />
                     <Legend
-                      wrapperStyle={{ fontSize: 11, fontFamily: "'Inter', sans-serif", color: T.textSecondary, paddingTop: 15,}}
+                      wrapperStyle={{ fontSize: 11, fontFamily: "var(--font-sans)", color: T.textSecondary, paddingTop: 15,}}
                       formatter={(value) => (value === "Mx" || value === "Media" ? value : CD_LABEL[value] || `CD ${value}`)}
                     />
                     {encaixeData.origens.map((origem, i) => (
@@ -1671,7 +1591,7 @@ export default function PainelPFA({ processo = "recebimento", onProcessoChange }
                         dataKey={String(origem)}
                         name={String(origem)}
                         stackId="stack"
-                        fill={ORIGEM_COLORS[i % ORIGEM_COLORS.length]}
+                        fill={origemCores()[i % origemCores().length]}
                       >
                         <LabelList dataKey={String(origem)} position="inside" fill={T.textPrimary} fontSize={10} formatter={(v) => v != null ? Math.round(Number(v)) : ""} />
                       </Bar>

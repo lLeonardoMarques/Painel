@@ -22,6 +22,7 @@ import {
   Layers3,
   CalendarRange,
   Boxes,
+  ClipboardCheck,
   PackageOpen,
   Ship,
   Truck,
@@ -61,12 +62,31 @@ const ANALYTICS_NAV: NavItem[] = [
   { id: "projecao-cd", label: "Projeção de Ocupação", icon: CalendarRange },
 ];
 
-// PFA (planejamento de final de ano): cada item abre o painel PFA no processo correspondente
-const PFA_NAV: NavItem[] = [
-  { id: "pfa-recebimento", label: "Recebimento", icon: PackageOpen },
-  { id: "pfa-importacao", label: "Importação", icon: Ship },
-  { id: "pfa-expedicao", label: "Expedição", icon: Truck },
-  { id: "pfa-transferencia", label: "Transferência", icon: ArrowLeftRight },
+// PFA (planejamento de final de ano): cada modo tem os seus processos; a página é "pfa/<modo>/<processo>"
+const PFA_MENU: { modo: string; label: string; itens: NavItem[] }[] = [
+  {
+    modo: "planejamento",
+    label: "Planejamento Fim de Ano",
+    itens: [
+      { id: "pfa/planejamento/recebimento", label: "Recebimento", icon: PackageOpen },
+      { id: "pfa/planejamento/importacao", label: "Importação", icon: Ship },
+      { id: "pfa/planejamento/faturamento", label: "Expedição", icon: Truck },
+      { id: "pfa/planejamento/transferencia", label: "Transferência", icon: ArrowLeftRight },
+    ],
+  },
+  {
+    modo: "esteAno",
+    label: "Este Ano",
+    itens: [
+      { id: "pfa/esteAno/recebimento", label: "Recebimento", icon: PackageOpen },
+      { id: "pfa/esteAno/faturamento", label: "Expedição", icon: Truck },
+    ],
+  },
+  {
+    modo: "semEdicao",
+    label: "Faturamento sem Edição",
+    itens: [{ id: "pfa/semEdicao/faturamentoReal", label: "Expedição", icon: Truck }],
+  },
 ];
 
 const OTHER_NAV: NavItem[] = [
@@ -74,7 +94,6 @@ const OTHER_NAV: NavItem[] = [
 ];
 
 const ANALYTICS_PAGES = new Set(["dashboard", "painel-gerencial", "painel-regionais", "projecao-cd"]);
-const PFA_PAGES = new Set(PFA_NAV.map((item) => item.id));
 
 function readStored(key: string, fallback: string): string {
   try {
@@ -100,7 +119,8 @@ export default function Layout({
   );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
-  const [pfaOpen, setPfaOpen] = useState(() => PFA_PAGES.has(currentPage));
+  const [pfaOpen, setPfaOpen] = useState(() => currentPage.startsWith("pfa/"));
+  const [pfaModoAberto, setPfaModoAberto] = useState(() => currentPage.split("/")[1] || "planejamento");
 
   useEffect(() => {
     try {
@@ -112,7 +132,10 @@ export default function Layout({
 
   useEffect(() => {
     if (ANALYTICS_PAGES.has(currentPage)) setAnalyticsOpen(true);
-    if (PFA_PAGES.has(currentPage)) setPfaOpen(true);
+    if (currentPage.startsWith("pfa/")) {
+      setPfaOpen(true);
+      setPfaModoAberto(currentPage.split("/")[1]);
+    }
   }, [currentPage]);
 
   useEffect(() => {
@@ -121,7 +144,7 @@ export default function Layout({
 
   const dark = theme === "dark";
   const analyticsActive = ANALYTICS_PAGES.has(currentPage);
-  const pfaActive = PFA_PAGES.has(currentPage);
+  const pfaActive = currentPage.startsWith("pfa/");
   const isError = !!notification && /❌|erro|error/i.test(notification);
   const cleanedNotification = notification?.replace(/[❌⚠️🔍📊📍📅🧹🎯⚡✅]/g, "").trim();
   const showNotification = !!notification && /❌|⚠️|erro|error|alerta/i.test(notification);
@@ -171,11 +194,11 @@ export default function Layout({
     );
   };
 
-  /** Grupo recolhível do menu (ex.: Analítico, PFA): no menu compacto, clicar expande o menu e abre o grupo. */
+  /** Grupo recolhível do menu (Analítico, PFA): no menu compacto, clicar expande o menu e abre o grupo. */
   const renderGroup = (
     label: string,
     Icon: React.ComponentType<{ className?: string }>,
-    items: NavItem[],
+    items: NavItem[] | React.ReactNode,
     open: boolean,
     setOpen: React.Dispatch<React.SetStateAction<boolean>>,
     active: boolean,
@@ -221,7 +244,7 @@ export default function Layout({
                   dark ? "border-slate-700" : "border-slate-200"
                 }`}
               >
-                {items.map((item) => renderLink(item))}
+                {Array.isArray(items) ? items.map((item) => renderLink(item)) : items}
               </div>
             </motion.div>
           )}
@@ -229,6 +252,35 @@ export default function Layout({
       )}
     </>
   );
+
+  /** Conteúdo do grupo PFA: os modos, cada um com os seus processos. */
+  const renderPfa = () =>
+    PFA_MENU.map((grupo) => {
+      const aberto = pfaModoAberto === grupo.modo;
+      const ativo = currentPage.startsWith(`pfa/${grupo.modo}/`);
+      return (
+        <div key={grupo.modo}>
+          <button
+            type="button"
+            aria-expanded={aberto}
+            onClick={() => setPfaModoAberto(aberto ? "" : grupo.modo)}
+            className={`flex h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] font-medium transition-colors cursor-pointer ${
+              ativo
+                ? dark ? "text-white" : "text-slate-950"
+                : dark ? "text-slate-400 hover:bg-slate-800/70 hover:text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+            }`}
+          >
+            <span className="flex-1 truncate">{grupo.label}</span>
+            {aberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+          {aberto && (
+            <div className={`ml-3 mt-1 mb-1 space-y-1 border-l pl-3 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+              {grupo.itens.map((item) => renderLink(item))}
+            </div>
+          )}
+        </div>
+      );
+    });
 
   const renderSidebar = (compact: boolean, mobile = false) => (
     <>
@@ -303,7 +355,7 @@ export default function Layout({
             )}
             {renderGroup("Analítico", Activity, ANALYTICS_NAV, analyticsOpen, setAnalyticsOpen, analyticsActive, compact, mobile)}
             <div className="mt-1">
-              {renderGroup("PFA", Boxes, PFA_NAV, pfaOpen, setPfaOpen, pfaActive, compact, mobile)}
+              {renderGroup("PFA", Boxes, <>{renderPfa()}</>, pfaOpen, setPfaOpen, pfaActive, compact, mobile)}
             </div>
             <div className="mt-1 space-y-1">{OTHER_NAV.map((item) => renderLink(item, compact))}</div>
           </div>
@@ -314,7 +366,10 @@ export default function Layout({
             {!compact && (
               <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Administração</p>
             )}
-            {renderLink({ id: "user-control", label: "Usuários e acessos", icon: Users }, compact)}
+            <div className="space-y-1">
+              {renderLink({ id: "user-control", label: "Usuários e acessos", icon: Users }, compact)}
+              {renderLink({ id: "lancar-realizado", label: "Lançar realizado", icon: ClipboardCheck }, compact)}
+            </div>
           </div>
         )}
       </nav>

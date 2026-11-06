@@ -6,7 +6,7 @@ import { apiFetch } from "../services/api";
 // Projeção de Ocupação do CD (S&OP) — API /api/sop do backend gestao-ppcp.
 // Regras (definidas pelo planejamento):
 //  · dia com foto de ocupação = realizado: a tabela mostra só o real; o gráfico mostra real e projetado;
-//  · hoje mostra a projeção (o realizado de hoje é lançado amanhã, no painel "Lançar realizado");
+//  · hoje mostra a projeção (o realizado de hoje é lançado amanhã, em Administração > Lançar realizado);
 //  · nada que já aconteceu pode ser alterado: planejado só de amanhã em diante, realizado uma única vez;
 //  · na simulação a tabela é só leitura; a simulação é ajustada pelos parâmetros, variações e posições.
 // ---------------------------------------------------------------------------
@@ -158,7 +158,6 @@ const CAMPO_FLUXO: Record<string, string> = {
   frac: "demandaFracionada",
   fech: "demandaFechada",
 };
-const CAMPOS_REAL = ["veiculos", "pallets", "caixasFracionadas", "caixasFechadas"] as const;
 const PAR_CAMPOS = ["percentualRecebimento", "palletsPorVeiculo", "percentualExpedicao", "caixasPalletFracionado", "caixasPalletFechado"] as const;
 const PCT_CAMPOS = new Set<string>(["percentualRecebimento", "percentualExpedicao"]);
 
@@ -222,13 +221,11 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const [proj, setProj] = useState<Projecao | null>(null);
   const [comp, setComp] = useState<Comparativo | null>(null);
   const [simDef, setSimDef] = useState<SimulacaoDetalhe | null>(null);
-  const [reais, setReais] = useState<Projecao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [recarregar, setRecarregar] = useState(0);
 
   const [pendFluxo, setPendFluxo] = useState<Record<string, Pendente>>({});
-  const [pendReal, setPendReal] = useState<Record<string, Pendente>>({});
   const [salvando, setSalvando] = useState(false);
 
   const hoje = proj?.hoje || hojeLocal;
@@ -291,13 +288,6 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
           setSimDef(null);
         }
         setProj(p);
-        if (!sim && cat !== "TODAS") {
-          const h = p.hoje;
-          const r = await chamar<Projecao>(`/projecao?categoria=${cat}&inicio=${iso(addD(parse(h), -6))}&fim=${h}`);
-          if (!cancelado) setReais(r);
-        } else {
-          setReais(null);
-        }
       } catch (e: any) {
         if (!cancelado) setErro(e.message);
       } finally {
@@ -309,11 +299,10 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
     };
   }, [cat, sim, periodo, recarregar]);
 
-  const temPendente = Object.keys(pendFluxo).length + Object.keys(pendReal).length > 0;
+  const temPendente = Object.keys(pendFluxo).length > 0;
   const trocar = (acao: () => void) => {
     if (temPendente && !window.confirm("Há alterações não salvas. Descartar?")) return;
     setPendFluxo({});
-    setPendReal({});
     acao();
   };
 
@@ -389,27 +378,6 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
     }
   };
 
-  const lancarRealizado = async () => {
-    const itens = Object.values(pendReal);
-    if (!itens.length) return;
-    const incompletos = itens.filter((r) => CAMPOS_REAL.some((k) => r[k] == null)).map((r) => dm(r.data as string));
-    let msg = `Lançar o realizado de ${itens.map((r) => dm(r.data as string)).join(", ")}? Depois de lançado não pode ser alterado.`;
-    if (incompletos.length) msg += `\n\nAtenção: ${incompletos.join(", ")} tem campos vazios, que ficarão vazios para sempre.`;
-    if (!window.confirm(msg)) return;
-    setSalvando(true);
-    try {
-      await chamar("/lancamentos/realizados", { method: "PUT", body: JSON.stringify(itens) });
-      setPendReal({});
-      notificar("✅ Realizado lançado");
-      setRecarregar((n) => n + 1);
-    } catch (e: any) {
-      setErro(e.message);
-      notificar(`❌ ${e.message}`);
-    } finally {
-      setSalvando(false);
-    }
-  };
-
   // ------------------------------------------------------------- simulação
   const novaSimulacao = async () => {
     const nome = window.prompt("Nome da simulação:", `Simulação ${new Date().toLocaleDateString("pt-BR")}`);
@@ -454,7 +422,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   else if (sim) dicas.push("Simulação: a tabela mostra a projeção simulada, sem edição. Ajuste a simulação no painel abaixo.");
   else {
     if (fluxosCat.length > 1 && fluxo === "TOTAL") dicas.push("Para editar, escolha o fluxo (Limpeza ou Perfumaria).");
-    dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em "Lançar realizado".');
+    dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em Administração > Lançar realizado.');
   }
   dicas.push(...(proj?.avisos || []));
 
@@ -687,79 +655,6 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
           </div>
         )}
       </section>
-
-      {/* LANÇAR REALIZADO */}
-      {reais && (
-        <section className={`${painel} p-4 sm:p-5`}>
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-            <h2 className="text-base font-semibold">Lançar realizado</h2>
-            <span className="text-xs text-slate-500">Últimos 7 dias até hoje · cada dia pode ser lançado uma única vez</span>
-          </div>
-          <div className={`overflow-x-auto rounded-lg border ${isDark ? "border-slate-800" : "border-slate-200"}`}>
-            <table className="w-full min-w-[680px] text-xs tabular-nums">
-              <thead>
-                <tr className={isDark ? "bg-slate-900" : "bg-slate-50"}>
-                  {["Data", "Veículos", "Pallets recebidos", "Caixas fracionadas", "Caixas fechadas", "Situação"].map((t, i) => (
-                    <th key={t} className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${i === 0 ? "text-left" : "text-right"}`}>{t}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...reais.dias].reverse().map((d) => {
-                  const chave = `${cat}|${d.data}`;
-                  const pend = pendReal[chave];
-                  const referencia: Record<string, number | null | undefined> = {
-                    veiculos: d.planejado?.veiculos, pallets: d.planejado?.palletsIn,
-                    caixasFracionadas: d.planejado?.caixasFracionadas, caixasFechadas: d.planejado?.caixasFechadas,
-                  };
-                  return (
-                    <tr key={d.data} className={`border-t ${isDark ? "border-slate-800/70" : "border-slate-100"} ${d.data === hoje ? (isDark ? "bg-sky-950/40" : "bg-sky-50") : ""}`}>
-                      <td className="px-3 py-1.5 text-left whitespace-nowrap">
-                        <span className="mr-1.5 text-[11px] text-slate-500">{WD[parse(d.data).getDay()]}</span>
-                        {dm(d.data)}{d.data === hoje ? " · hoje" : ""}
-                      </td>
-                      {CAMPOS_REAL.map((k) => (
-                        <td key={k} className="px-1.5 py-1 text-right">
-                          {d.realizado ? (
-                            <span className="px-1.5">{nf(d.realizado[k])}</span>
-                          ) : (
-                            <input type="number" min={0} step="any" inputMode="decimal" aria-label={`${k} ${d.data}`}
-                              placeholder={nf(referencia[k])}
-                              value={pend && pend[k] != null ? String(pend[k]) : ""}
-                              onChange={(e) => {
-                                const valor = num(e.target.value);
-                                setPendReal((p) => {
-                                  const atual: Pendente = p[chave] || { categoria: cat, data: d.data, veiculos: null, pallets: null, caixasFracionadas: null, caixasFechadas: null };
-                                  const novo = { ...atual, [k]: valor };
-                                  const copia = { ...p };
-                                  if (CAMPOS_REAL.every((c) => novo[c] == null)) delete copia[chave];
-                                  else copia[chave] = novo;
-                                  return copia;
-                                });
-                              }}
-                              className={inputCel} />
-                          )}
-                        </td>
-                      ))}
-                      <td className="px-3 py-1.5 text-right">
-                        <span className={`inline-block rounded-full px-2 py-0.5 font-semibold ${d.realizado ? "bg-green-500/15 text-green-600" : "bg-amber-500/15 text-amber-600"}`}>
-                          {d.realizado ? "lançado" : "pendente"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-            <span>Ex.: o realizado de hoje é lançado amanhã. Depois de lançado, não pode ser alterado. Em cinza, a projeção do dia.</span>
-            <button type="button" className={btnPrimario} onClick={lancarRealizado} disabled={!Object.keys(pendReal).length || salvando}>
-              <Save className="h-3.5 w-3.5" /> Lançar realizado
-            </button>
-          </div>
-        </section>
-      )}
 
       {/* SIMULAÇÃO */}
       {sim && simDef && comp && (

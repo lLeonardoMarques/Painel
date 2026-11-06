@@ -13,6 +13,7 @@ import AlertaCategorias from "./components/AlertasCategorias";
 import ManhattanCapacidades from "./components/ManhattanCapacidades";
 import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
 import PainelPFA from "./components/pfa/PainelPFA";
+import LancarRealizado from "./components/LancarRealizado";
 
 // ============================================
 // 🔥 CONSTANTES DE CONFIGURAÇÃO
@@ -112,7 +113,9 @@ const storageManager = {
     return (saved === "inbound" || saved === "outbound") ? saved : DEFAULT_TAB;
   },
   getCurrentPage: (): string => {
-    return localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE) || DEFAULT_PAGE;
+    const page = localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE) || DEFAULT_PAGE;
+    // versões anteriores do PFA usavam "pfa" e "pfa-<processo>": abre no Planejamento Fim de Ano
+    return page === "pfa" || page.startsWith("pfa-") ? "pfa/planejamento/recebimento" : page;
   },
 };
 
@@ -198,8 +201,8 @@ export default function App() {
       return;
     }
 
-    // 🔥 Não-admin não pode acessar Controle de Usuários
-    if (user.role !== "admin" && currentPage === "user-control") {
+    // 🔥 Não-admin não pode acessar Controle de Usuários nem o lançamento do realizado
+    if (user.role !== "admin" && (currentPage === "user-control" || currentPage === "lancar-realizado")) {
       setCurrentPage(DEFAULT_PAGE);
       return;
     }
@@ -487,13 +490,15 @@ export default function App() {
           />
         )}
 
-        {currentPage.startsWith("pfa-") && (
+        {currentPage.startsWith("pfa/") && (
           <div className="flex min-h-0 flex-1 flex-col">
-            <PainelPFA
-              processo={currentPage.slice("pfa-".length)}
-              onProcessoChange={(processo: string) => setCurrentPage(`pfa-${processo}`)}
-            />
+            {/* página "pfa/<modo>/<processo>", escolhida no menu PFA */}
+            <PainelPFA theme={theme} modo={currentPage.split("/")[1]} aba={currentPage.split("/")[2]} />
           </div>
+        )}
+
+        {currentPage === "lancar-realizado" && user?.role === "admin" && (
+          <LancarRealizado theme={theme} showNotification={showNotification} />
         )}
 
         {currentPage === "user-control" && user?.role === "admin" && (
