@@ -595,811 +595,354 @@ export default function ManhattanCapacidades({
     }
   };
 
-  return (
-    <div
-      className={`min-h-full w-full flex flex-col p-4 md:p-6 transition-colors duration-200 ${
-        isDark ? "bg-[#070b14] text-slate-100" : "bg-[#f8fafc] text-slate-950"
-      }`}
-    >
-      {/* ============================================================
-          CABEÇALHO PRINCIPAL COM IDENTIFICAÇÃO E AÇÕES
-          ============================================================ */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-            <Clock className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1
-                className={`text-2xl font-black tracking-tight ${
-                  isDark ? "text-white" : "text-slate-950"
-                }`}
-              >
-                Manhattan Capacidades
-              </h1>
-              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
-                WMS Inbound
-              </span>
-            </div>
-            
-          </div>
+  // ============================================================
+  // ESTILOS (mesmo padrão visual da tela Capacidades)
+  // ============================================================
+  const ui = {
+    card: "rounded-2xl bg-white/70 dark:bg-slate-900/60 shadow-xs backdrop-blur-md transition-colors",
+    select: "w-full rounded-xl bg-slate-500/5 dark:bg-slate-500/10 hover:bg-slate-500/10 dark:hover:bg-slate-500/15 px-3.5 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-colors cursor-pointer border-0",
+    label: "mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300",
+    labelIcon: "h-3.5 w-3.5 text-slate-400 dark:text-slate-500",
+    ghostBtn: "inline-flex h-9 items-center gap-2 rounded-xl bg-slate-500/10 hover:bg-slate-500/15 text-slate-700 dark:text-slate-200 px-3.5 text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors",
+    primaryBtn: "inline-flex h-9 items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 text-xs font-semibold shadow-xs disabled:opacity-60 cursor-pointer transition-colors",
+    th: "px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 select-none",
+    seg: (active: boolean) => `px-4 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+      active
+        ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs"
+        : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+    }`,
+  };
+  const optionClass = isDark ? "bg-slate-900 text-slate-100" : "";
+  const DIAS = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"] as const;
+  const CD_OPCOES = [
+    { grupo: "São Paulo / Matriz", itens: [["1965", "Mercearia"], ["1942", "Perecíveis"], ["930", "FLV, Insumos/Emb, Mercearia"], ["7801", "Bazar"], ["941", "Suprimentos"]] },
+    { grupo: "Centros regionais", itens: [["409", "Mercearia, Perecíveis, FLV"], ["1974", "Mercearia, Perecíveis, FLV"], ["1979", "Mercearia, Perecíveis, FLV"], ["1984", "Perecíveis, FLV"], ["1953", "Mercearia"]] },
+  ];
+  const CATEGORIAS_OPCOES = [
+    { val: "Mercearia", label: "Mercearia" },
+    { val: "Perecíveis", label: "Perecíveis" },
+    { val: "FLV", label: "FLV (Frutas, Legumes, Verduras)" },
+    { val: "Bazar", label: "Bazar" },
+    { val: "Insumos/Embalagens", label: "Insumos/Embalagens" },
+    { val: "Suprimentos", label: "Suprimentos" },
+  ];
+
+  const tableBlock = (
+    <div className={isTableMaximized ? "flex min-h-0 flex-1 flex-col" : "space-y-4"}>
+      {/* Barra superior da tabela */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Grade horária</span>
+          <span className="font-mono">
+            {weekDays[0].labelDisplay} a {weekDays[6].labelDisplay}
+          </span>
+          {cdSelecionado !== "all" && (
+            <span className="px-2 py-0.5 rounded-md font-mono bg-slate-500/10 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 font-medium">CD {cdSelecionado}</span>
+          )}
+          {categoriaSelecionada !== "all" && (
+            <span className="px-2 py-0.5 rounded-md bg-slate-500/10 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 font-medium">{categoriaSelecionada}</span>
+          )}
         </div>
-
-        <div className="flex items-center flex-wrap gap-2">
-          {/* Botão de Ocultar/Desocultar Opções */}
+        <div className="flex items-center gap-2">
+          {isTableMaximized && (
+            <>
+              <button type="button" onClick={handleCopyClipboard} className={ui.ghostBtn} title="Copiar grade no formato TSV">
+                {copiedSuccess ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedSuccess ? "Copiado" : "Copiar"}
+              </button>
+              <button type="button" onClick={handleExportExcel} className={ui.ghostBtn} title="Exportar para Excel (.xlsx)">
+                <Download className="h-3.5 w-3.5" />
+                Excel
+              </button>
+            </>
+          )}
           <button
-            onClick={() => setShowOptions((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
-              showOptions
-                ? "bg-amber-500 hover:bg-amber-600 text-white"
-                : "bg-emerald-600 hover:bg-emerald-700 text-white"
-            }`}
-            title={showOptions ? "Ocultar painel de opções" : "Mostrar painel de opções"}
+            type="button"
+            onClick={() => setIsTableMaximized(!isTableMaximized)}
+            className={ui.ghostBtn}
+            title={isTableMaximized ? "Restaurar tamanho normal (Esc)" : "Ver a tabela em tela cheia"}
           >
-            {showOptions ? (
-              <>
-                <EyeOff className="w-3.5 h-3.5" />
-                Ocultar Opções
-              </>
-            ) : (
-              <>
-                <Eye className="w-3.5 h-3.5" />
-                Mostrar Opções
-              </>
-            )}
-          </button>
-
-          {/* Botão de Atualizar API */}
-          <button
-            onClick={fetchCapacidades}
-            disabled={isLoading}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
-              isDark
-                ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                : "bg-white hover:bg-slate-100 text-slate-900 border border-slate-300"
-            }`}
-            title="Recarregar dados da API de Capacidades"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-blue-500" : ""}`}
-            />
-            {isLoading ? "Sincronizando..." : "Atualizar"}
-          </button>
-
-          {/* Botão Copiar */}
-
-
-          {/* Botão Exportar Excel */}
-          <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
-            title="Exportar para planilha Excel (.xlsx)"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Exportar Excel
-          </button>
-
-          {/* Botão Maximizar Tabela */}
-          <button
-            onClick={() => setIsTableMaximized((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
-              isTableMaximized
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                : isDark
-                ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                : "bg-white hover:bg-slate-100 text-slate-900 border border-slate-300"
-            }`}
-            title={
-              isTableMaximized
-                ? "Restaurar tamanho normal da tabela (Esc)"
-                : "Maximizar visualização da tabela para tela cheia"
-            }
-          >
-            {isTableMaximized ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5" />
-                Restaurar Tabela
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
-                Maximizar Tabela
-              </>
-            )}
+            {isTableMaximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {isTableMaximized ? "Restaurar (Esc)" : "Tela cheia"}
           </button>
         </div>
       </div>
 
-      {/* ============================================================
-          PAINEL DE OPÇÕES E CONTROLES (OCULTÁVEL)
-          ============================================================ */}
-      <AnimatePresence>
-        {showOptions && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-            animate={{ opacity: 1, height: "auto", marginBottom: 20 }}
-            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div
-              className={`rounded-2xl border transition-all shadow-xs ${
-                isDark
-                  ? "bg-[#0b101e] border-slate-800"
-                  : "bg-white border-slate-200"
-              }`}
-            >
-              <div className="p-4 sm:p-5 flex flex-col gap-4">
-                {/* NÍVEL 1: NAVEGAÇÃO E SELETOR DE PERÍODO (SEMANA) */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800/80">
-                  {/* Lado Esquerdo: Controle de Semana com Stepper */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`text-xs font-black uppercase tracking-wider mr-1 ${
-                        isDark ? "text-slate-300" : "text-slate-900"
-                      }`}
-                    >
-                      Semana:
-                    </span>
-
-                    {/* Botões de Navegação de Semana */}
-                    <div className="inline-flex items-center rounded-xl p-1 bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800">
-                      <button
-                        onClick={handleSemanaAnterior}
-                        className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
-                          isDark
-                            ? "hover:bg-slate-800 text-slate-300 hover:text-white"
-                            : "hover:bg-white text-slate-800 hover:text-slate-950 hover:shadow-2xs"
-                        }`}
-                        title="Semana Anterior (-7 dias)"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={handleSemanaAtual}
-                        className="px-3 py-1 rounded-lg text-xs font-black bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all flex items-center gap-1.5"
-                        title="Ir para a semana atual vigente"
-                      >
-                        <Calendar className="w-3.5 h-3.5" />
-                        Semana Atual
-                      </button>
-
-                      <button
-                        onClick={handleSemanaSeguinte}
-                        className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
-                          isDark
-                            ? "hover:bg-slate-800 text-slate-300 hover:text-white"
-                            : "hover:bg-white text-slate-800 hover:text-slate-950 hover:shadow-2xs"
-                        }`}
-                        title="Próxima Semana (+7 dias)"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lado Direito: Caixa Limpa de Intervalo de Datas */}
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${
-                        isDark
-                          ? "bg-slate-900/80 border-slate-700/80 text-white"
-                          : "bg-slate-50 border-slate-300/80 text-slate-950"
-                      }`}
-                    >
-                      <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                          De
-                        </span>
-                        <input
-                          type="date"
-                          value={dataInicio}
-                          onChange={(e) => {
-                            const startVal = e.target.value;
-                            setDataInicio(startVal);
-                            if (startVal) {
-                              const d = parseISODate(startVal);
-                              d.setDate(d.getDate() + 6);
-                              setDataFim(formatDateToISO(d));
-                            }
-                          }}
-                          className={`bg-transparent font-mono font-black text-xs outline-hidden cursor-pointer ${
-                            isDark ? "text-white" : "text-slate-950"
-                          }`}
-                        />
-                        <span className="text-slate-400 font-bold px-0.5">até</span>
-                        <input
-                          type="date"
-                          value={dataFim}
-                          onChange={(e) => setDataFim(e.target.value)}
-                          className={`bg-transparent font-mono font-black text-xs outline-hidden cursor-pointer ${
-                            isDark ? "text-white" : "text-slate-950"
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Tag com contagem de dias */}
-                    <span
-                      className={`hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
-                        isDark
-                          ? "bg-slate-800/60 text-slate-300 border-slate-700"
-                          : "bg-slate-100 text-slate-800 border-slate-200"
-                      }`}
-                    >
-                      7 dias (Dom-Sáb)
+      <div className={isTableMaximized ? "min-h-0 flex-1 overflow-auto" : "max-h-[620px] overflow-auto"}>
+        <table className="w-full min-w-[820px] text-left border-separate border-spacing-y-1">
+          <thead className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md">
+            <tr>
+              <th className={`${ui.th} text-left rounded-l-xl w-36`}>Horário</th>
+              {weekDays.map((d, idx) => (
+                <th key={d.dateStr} className={`${ui.th} text-center ${idx === 0 || idx === 6 ? "text-slate-400 dark:text-slate-500" : ""}`}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>{d.nomeDia}</span>
+                    <span className="font-mono text-[10px] font-medium normal-case tracking-normal opacity-70">
+                      {d.dateStr.slice(8, 10)}/{d.dateStr.slice(5, 7)}
                     </span>
                   </div>
-                </div>
+                </th>
+              ))}
+              <th className={`${ui.th} text-right rounded-r-xl`}>Total</th>
+            </tr>
+          </thead>
 
-                {/* NÍVEL 2: FILTROS DE CD/CATEGORIA + MODO + AÇÃO PRINCIPAL */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                  {/* Filtros de CD e Categoria */}
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {/* Dropdown Centro de Distribuição */}
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
-                          isDark
-                            ? "bg-slate-900 border-slate-700 text-white"
-                            : "bg-slate-50 border-slate-300 text-slate-950"
-                        }`}
-                      >
-                        <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                          CD:
-                        </span>
-                        <select
-                          value={cdSelecionado}
-                          onChange={(e) => setCdSelecionado(e.target.value)}
-                          className="bg-transparent font-bold outline-hidden cursor-pointer pr-1"
-                        >
-                          <option value="all" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                            Todos os Centros (Consolidado)
-                          </option>
-                          <optgroup label="São Paulo / Matriz" className={isDark ? "bg-slate-900 text-slate-300" : "bg-slate-100 text-slate-700"}>
-                            <option value="1965" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1965 (Mercearia)
-                            </option>
-                            <option value="1942" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1942 (Perecíveis)
-                            </option>
-                            <option value="930" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 930 (FLV, Insumos/Emb, Mercearia)
-                            </option>
-                            <option value="7801" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 7801 (Bazar)
-                            </option>
-                            <option value="941" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 941 (Suprimentos)
-                            </option>
-                          </optgroup>
-                          <optgroup label="Centros Regionais" className={isDark ? "bg-slate-900 text-slate-300" : "bg-slate-100 text-slate-700"}>
-                            <option value="409" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 409 (Mercearia, Perecíveis, FLV)
-                            </option>
-                            <option value="1974" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1974 (Mercearia, Perecíveis, FLV)
-                            </option>
-                            <option value="1979" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1979 (Mercearia, Perecíveis, FLV)
-                            </option>
-                            <option value="1984" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1984 (Perecíveis, FLV)
-                            </option>
-                            <option value="1953" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                              CD 1953 (Mercearia)
-                            </option>
-                          </optgroup>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Dropdown Categoria Inbound */}
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
-                          isDark
-                            ? "bg-slate-900 border-slate-700 text-white"
-                            : "bg-slate-50 border-slate-300 text-slate-950"
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                          Categoria:
-                        </span>
-                        <select
-                          value={categoriaSelecionada}
-                          onChange={(e) => setCategoriaSelecionada(e.target.value)}
-                          className="bg-transparent font-bold outline-hidden cursor-pointer pr-1"
-                        >
-                          <option value="all" className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}>
-                            {cdSelecionado === "all" ? "Todas Categorias" : "Todas as Categorias do CD"}
-                          </option>
-                          {[
-                            { val: "Mercearia", label: "Mercearia" },
-                            { val: "Perecíveis", label: "Perecíveis" },
-                            { val: "FLV", label: "FLV (Frutas, Legumes, Verduras)" },
-                            { val: "Bazar", label: "Bazar" },
-                            { val: "Insumos/Embalagens", label: "Insumos/Embalagens" },
-                            { val: "Suprimentos", label: "Suprimentos" },
-                          ].map((cat) => {
-                            const isHomologada = cdSelecionado === "all" || cdPossuiCategoria(cdSelecionado, cat.val);
-                            return (
-                              <option
-                                key={cat.val}
-                                value={cat.val}
-                                className={isDark ? "bg-slate-900 text-white" : "bg-white text-slate-950"}
-                              >
-                                {cat.label} {cdSelecionado !== "all" ? (isHomologada ? "✓" : "(Não opera - Retorna 0)") : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lado Direito: Segmented Modo de Visualização + Botão Recalcular */}
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {/* Segmented Control de Visualização */}
-                    <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                      <button
-                        onClick={() => setVisualizacaoModo("igualitaria")}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                          visualizacaoModo === "igualitaria"
-                            ? "bg-blue-600 text-white shadow-xs"
-                            : isDark
-                            ? "text-slate-400 hover:text-white"
-                            : "text-slate-700 hover:text-slate-950"
-                        }`}
-                        title="Diluição uniforme entre as 24 horas: conserva rigorosamente o total de inbound (ex: 150 plts)"
-                      >
-                        Diluição Igualitária (24h)
-                      </button>
-                      <button
-                        onClick={() => setVisualizacaoModo("ponderada")}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                          visualizacaoModo === "ponderada"
-                            ? "bg-blue-600 text-white shadow-xs"
-                            : isDark
-                            ? "text-slate-400 hover:text-white"
-                            : "text-slate-700 hover:text-slate-950"
-                        }`}
-                        title="Diluição ponderada pelas janelas operacionais de docas Manhattan WMS com conservação exata da capacidade"
-                      >
-                        Diluição por Curva WMS
-                      </button>
-                    </div>
-
-                    {/* Botão Principal de Recalcular */}
-                    <button
-                      onClick={handleRecalcular}
-                      disabled={isRecalculating}
-                      className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-md shadow-blue-500/20 transition-all active:scale-95 shrink-0"
-                      title="Recalcular a distribuição horária da semana selecionada"
-                    >
-                      <Calculator
-                        className={`w-4 h-4 ${isRecalculating ? "animate-spin" : ""}`}
-                      />
-                      <span>Recalcular Grade</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Alerta de Incompatibilidade CD x Categoria */}
-      {isCdCategoriaIncompativel && (
-        <div className="mb-5 p-4 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-2.5">
-            <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <div>
-              <span>
-                O <strong>CD {cdSelecionado}</strong> não opera a categoria <strong>"{categoriaSelecionada}"</strong> (categorias homologadas para este CD:{" "}
-                <span className="underline">{CD_CATEGORIAS_MAP[cdSelecionado]?.join(", ")}</span>).
-              </span>
-              <p className="text-[11px] font-normal text-amber-800 dark:text-amber-300 mt-0.5">
-                Conforme a regra operacional estrita de amarração, todos os horários retornam exatamente 0.
-              </p>
-            </div>
-          </div>
-          <span className="px-3 py-1 rounded-lg bg-amber-200/90 dark:bg-amber-900/80 text-[11px] font-black tracking-wider uppercase shrink-0 text-center">
-            Capacidade: 0 plts
-          </span>
-        </div>
-      )}
-
-      {/* ============================================================
-          TABELA MANHATTAN CAPACIDADES
-          ============================================================ */}
-      <div
-        className={`${
-          isTableMaximized
-            ? "fixed inset-0 z-50 p-4 md:p-6 flex flex-col backdrop-blur-xl " +
-              (isDark ? "bg-[#070b14]/98" : "bg-slate-100/98")
-            : "flex-1 rounded-xl border overflow-hidden flex flex-col transition-colors " +
-              (isDark ? "bg-[#0b101e] border-slate-800" : "bg-white border-slate-200 shadow-sm")
-        }`}
-      >
-        {/* Barra Superior da Tabela com Status e Botão Maximizar / Restaurar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/80 rounded-t-xl shrink-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-wider text-slate-800 dark:text-slate-100">
-              <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span>Grade Horária Manhattan</span>
-            </div>
-
-            {isTableMaximized && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                Tela Cheia (Maximizado)
-              </span>
-            )}
-
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              • {weekDays[0].labelDisplay} a {weekDays[6].labelDisplay}
-            </span>
-
-            {cdSelecionado !== "all" && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                CD {cdSelecionado}
-              </span>
-            )}
-
-            {categoriaSelecionada !== "all" && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                {categoriaSelecionada}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Se maximizado, atalhos rápidos de cópia e exportação */}
-            {isTableMaximized && (
-              <>
-                <button
-                  onClick={handleCopyClipboard}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
-                    isDark
-                      ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                      : "bg-white hover:bg-slate-100 text-slate-900 border border-slate-300"
+          <tbody className="font-mono text-xs tabular-nums">
+            {computedTableData.map((row) => {
+              const isZeroRow = row.totalHorario === 0;
+              return (
+                <tr
+                  key={row.horario}
+                  className={`transition-colors ${
+                    isZeroRow ? "" : "bg-slate-500/[0.03] dark:bg-slate-500/[0.06] hover:bg-slate-500/[0.07] dark:hover:bg-slate-500/[0.11]"
                   }`}
-                  title="Copiar grade no formato TSV"
                 >
-                  {copiedSuccess ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-emerald-500">Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      Copiar
-                    </>
-                  )}
-                </button>
+                  <td className={`px-3 py-2.5 rounded-l-xl whitespace-nowrap ${isZeroRow ? "text-slate-400 dark:text-slate-600" : "text-slate-600 dark:text-slate-300 font-medium"}`}>
+                    {row.horario}
+                  </td>
+                  {DIAS.map((dia) => {
+                    const v = (row as any)[dia] as number;
+                    return (
+                      <td
+                        key={dia}
+                        className={`px-3 py-2.5 text-center ${
+                          v >= 15
+                            ? "text-blue-700 dark:text-blue-300 font-semibold"
+                            : v > 0
+                            ? "text-slate-900 dark:text-slate-100 font-medium"
+                            : "text-slate-300 dark:text-slate-600"
+                        }`}
+                      >
+                        {v}
+                      </td>
+                    );
+                  })}
+                  <td className={`px-3 py-2.5 text-right font-semibold rounded-r-xl ${isZeroRow ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-slate-100"}`}>
+                    {row.totalHorario}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
 
-                <button
-                  onClick={handleExportExcel}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
-                  title="Exportar para planilha Excel (.xlsx)"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Excel
-                </button>
-              </>
-            )}
+          <tfoot className="sticky bottom-0 z-10">
+            <tr className="bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur-md font-mono tabular-nums">
+              <td className="px-3 py-3 rounded-l-xl text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300 font-sans">
+                Total do dia
+              </td>
+              {columnTotals.map((tot, idx) => (
+                <td key={idx} className="px-3 py-3 text-center text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {tot.toLocaleString("pt-BR")}
+                </td>
+              ))}
+              <td className="px-3 py-3 text-right text-sm font-bold text-blue-700 dark:text-blue-300 rounded-r-xl">
+                {stats.totalSemana.toLocaleString("pt-BR")}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
-            {/* Botão de Maximizar / Restaurar */}
+      {/* Rodapé informativo */}
+      <footer className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400">
+        <span className="flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+          A soma das 24 faixas conserva exatamente o total de inbound da API.
+          {lastSync && ` Última sincronização: ${lastSync}.`}
+        </span>
+        <span className="font-medium text-slate-700 dark:text-slate-300">
+          Total da semana:
+          <strong className="ml-1.5 font-mono text-sm text-slate-900 dark:text-slate-100 font-bold">
+            {stats.totalSemana.toLocaleString("pt-BR")}
+          </strong>
+        </span>
+      </footer>
+    </div>
+  );
+
+  return (
+    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 text-slate-900 dark:text-slate-100">
+      <div className="max-w-[1760px] mx-auto w-full space-y-6">
+        {/* CABEÇALHO */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Planejamento operacional · WMS inbound
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              Manhattan capacidades
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Distribuição horária da capacidade de recebimento por semana.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setIsTableMaximized(!isTableMaximized)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all border ${
-                isTableMaximized
-                  ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-500 shadow-sm"
-                  : isDark
-                  ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                  : "bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 shadow-2xs"
-              }`}
-              title={
-                isTableMaximized
-                  ? "Restaurar tamanho normal da tabela (Pressione Esc)"
-                  : "Maximizar visualização da tabela para tela cheia"
-              }
+              type="button"
+              onClick={() => setShowOptions((prev) => !prev)}
+              className={ui.ghostBtn}
+              title={showOptions ? "Ocultar filtros" : "Mostrar filtros"}
             >
-              {isTableMaximized ? (
-                <>
-                  <Minimize2 className="w-3.5 h-3.5" />
-                  <span>Restaurar (Esc)</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Maximizar Tabela</span>
-                </>
-              )}
+              {showOptions ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {showOptions ? "Ocultar filtros" : "Mostrar filtros"}
+            </button>
+            <button type="button" onClick={handleCopyClipboard} className={ui.ghostBtn} title="Copiar grade no formato TSV">
+              {copiedSuccess ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedSuccess ? "Copiado" : "Copiar"}
+            </button>
+            <button type="button" onClick={handleExportExcel} className={ui.ghostBtn} title="Exportar para Excel (.xlsx)">
+              <Download className="h-3.5 w-3.5" />
+              Exportar Excel
+            </button>
+            <button type="button" onClick={fetchCapacidades} disabled={isLoading} className={ui.ghostBtn} title="Recarregar dados da API de Capacidades">
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              {isLoading ? "Sincronizando..." : "Atualizar dados"}
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left border-collapse min-w-[760px]">
-            {/* CABEÇALHO DA TABELA */}
-            <thead>
-              <tr
-                className={`text-xs uppercase tracking-wider font-black border-b sticky top-0 z-10 ${
-                  isDark
-                    ? "bg-[#0f172a] text-slate-200 border-slate-800"
-                    : "bg-slate-100 text-slate-950 border-slate-300"
-                }`}
-              >
-                <th className="py-3 px-3.5 font-black w-36 border-r border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                    Horário
-                  </div>
-                </th>
-
-                {weekDays.map((d, idx) => (
-                  <th
-                    key={d.dateStr}
-                    className={`py-3 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                      idx === 0 || idx === 6
-                        ? isDark
-                          ? "bg-slate-900/60 text-slate-300"
-                          : "bg-slate-100/90 text-slate-900"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex flex-col items-center">
-                      <span className="font-black">{d.nomeDia}</span>
-                      <span className="text-[10px] font-mono font-semibold opacity-75">
-                        {d.dateStr.slice(8, 10)}/{d.dateStr.slice(5, 7)}
-                      </span>
+        {/* FILTROS */}
+        <AnimatePresence initial={false}>
+          {showOptions && (
+            <motion.section
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <div className={`${ui.card} p-4 sm:p-5`}>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="block">
+                    <span className={ui.label}><Calendar className={ui.labelIcon} /> Semana</span>
+                    <div className="flex items-center gap-1 rounded-xl bg-slate-500/5 dark:bg-slate-500/10 p-1">
+                      <button type="button" onClick={handleSemanaAnterior} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-500/15 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer" title="Semana anterior (-7 dias)">
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={handleSemanaAtual} className="flex-1 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-500/15 cursor-pointer" title="Ir para a semana atual">
+                        Semana atual
+                      </button>
+                      <button type="button" onClick={handleSemanaSeguinte} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-500/15 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer" title="Próxima semana (+7 dias)">
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
-                  </th>
-                ))}
-
-                <th className="py-3 px-3 text-center font-black text-blue-600 dark:text-blue-400">
-                  Total Horário
-                </th>
-              </tr>
-            </thead>
-
-            {/* CORPO COM AS 24 FAIXAS HORÁRIAS */}
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
-              {computedTableData.map((row, rIdx) => {
-                const isZeroRow = row.totalHorario === 0;
-
-                return (
-                  <tr
-                    key={row.horario}
-                    className={`transition-colors ${
-                      isZeroRow
-                        ? isDark
-                          ? "bg-slate-950/20 text-slate-500"
-                          : "bg-slate-50/50 text-slate-400"
-                        : isDark
-                        ? "hover:bg-slate-800/40 text-slate-100"
-                        : "hover:bg-blue-50/40 text-slate-950 font-bold"
-                    }`}
-                  >
-                    {/* Coluna Horário */}
-                    <td className="py-2 px-3.5 font-bold border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded text-[11px] ${
-                          isZeroRow
-                            ? "text-slate-400 dark:text-slate-600 font-normal"
-                            : isDark
-                            ? "bg-slate-800/70 text-slate-200"
-                            : "bg-slate-100 text-slate-900 font-bold"
-                        }`}
-                      >
-                        {row.horario}
-                      </span>
-                    </td>
-
-                    {/* Domingo */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.domingo >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.domingo > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.domingo}
-                    </td>
-
-                    {/* Segunda */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.segunda >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.segunda > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.segunda}
-                    </td>
-
-                    {/* Terça */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.terca >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.terca > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.terca}
-                    </td>
-
-                    {/* Quarta */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.quarta >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.quarta > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.quarta}
-                    </td>
-
-                    {/* Quinta */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.quinta >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.quinta > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.quinta}
-                    </td>
-
-                    {/* Sexta */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.sexta >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.sexta > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.sexta}
-                    </td>
-
-                    {/* Sábado */}
-                    <td
-                      className={`py-2 px-3 text-center border-r border-slate-200 dark:border-slate-800 ${
-                        row.sabado >= 15
-                          ? isDark
-                            ? "bg-purple-950/30 text-purple-300 font-black"
-                            : "bg-purple-50 text-purple-950 font-black"
-                          : row.sabado > 0
-                          ? isDark
-                            ? "text-white font-bold"
-                            : "text-slate-950 font-black"
-                          : "text-slate-400 dark:text-slate-600"
-                      }`}
-                    >
-                      {row.sabado}
-                    </td>
-
-                    {/* Total Horário */}
-                    <td
-                      className={`py-2 px-3 text-center font-black ${
-                        isZeroRow
-                          ? "text-slate-400 dark:text-slate-600"
-                          : "text-blue-600 dark:text-blue-400"
-                      }`}
-                    >
-                      {row.totalHorario}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-
-            {/* RODAPÉ COM TOTAL DO DIA */}
-            <tfoot>
-              <tr
-                className={`font-black text-xs border-t-2 ${
-                  isDark
-                    ? "bg-[#0f172a] text-slate-100 border-slate-700"
-                    : "bg-slate-100 text-slate-950 border-slate-300"
-                }`}
-              >
-                <td className="py-3 px-3.5 uppercase tracking-wide border-r border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-slate-100">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    Total do Dia
                   </div>
-                </td>
+                  <div className="block">
+                    <span className={ui.label}><Clock className={ui.labelIcon} /> Período (dom–sáb)</span>
+                    <div className="flex items-center gap-1.5 rounded-xl bg-slate-500/5 dark:bg-slate-500/10 px-3 py-2 text-xs">
+                      <input
+                        type="date"
+                        value={dataInicio}
+                        onChange={(e) => {
+                          const startVal = e.target.value;
+                          setDataInicio(startVal);
+                          if (startVal) {
+                            const d = parseISODate(startVal);
+                            d.setDate(d.getDate() + 6);
+                            setDataFim(formatDateToISO(d));
+                          }
+                        }}
+                        className="min-w-0 flex-1 bg-transparent font-mono font-medium text-slate-800 dark:text-slate-100 outline-hidden cursor-pointer dark:[color-scheme:dark]"
+                      />
+                      <span className="text-slate-400">até</span>
+                      <input
+                        type="date"
+                        value={dataFim}
+                        onChange={(e) => setDataFim(e.target.value)}
+                        className="min-w-0 flex-1 bg-transparent font-mono font-medium text-slate-800 dark:text-slate-100 outline-hidden cursor-pointer dark:[color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+                  <label className="block">
+                    <span className={ui.label}><Building2 className={ui.labelIcon} /> Centro de distribuição</span>
+                    <select value={cdSelecionado} onChange={(e) => setCdSelecionado(e.target.value)} className={ui.select}>
+                      <option value="all" className={optionClass}>Todos os CDs (consolidado)</option>
+                      {CD_OPCOES.map((g) => (
+                        <optgroup key={g.grupo} label={g.grupo} className={optionClass}>
+                          {g.itens.map(([cdv, desc]) => (
+                            <option key={cdv} value={cdv} className={optionClass}>CD {cdv} ({desc})</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className={ui.label}><Layers className={ui.labelIcon} /> Categoria</span>
+                    <select value={categoriaSelecionada} onChange={(e) => setCategoriaSelecionada(e.target.value)} className={ui.select}>
+                      <option value="all" className={optionClass}>
+                        {cdSelecionado === "all" ? "Todas as categorias" : "Todas as categorias do CD"}
+                      </option>
+                      {CATEGORIAS_OPCOES.map((cat) => {
+                        const isHomologada = cdSelecionado === "all" || cdPossuiCategoria(cdSelecionado, cat.val);
+                        return (
+                          <option key={cat.val} value={cat.val} className={optionClass}>
+                            {cat.label} {cdSelecionado !== "all" ? (isHomologada ? "✓" : "(não opera)") : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
-                {columnTotals.map((tot, idx) => (
-                  <td
-                    key={idx}
-                    className="py-3 px-3 text-center font-black text-sm font-mono border-r border-slate-200 dark:border-slate-800"
-                  >
-                    <span
-                      className={`inline-block px-1.5 py-0.5 rounded ${
-                        isDark
-                          ? "bg-slate-800 text-white"
-                          : "bg-white text-slate-950 shadow-2xs border border-slate-200"
-                      }`}
-                    >
-                      {tot.toLocaleString("pt-BR")}
-                    </span>
-                  </td>
-                ))}
-
-                <td className="py-3 px-3 text-center font-black text-base font-mono text-blue-600 dark:text-blue-400">
-                  {stats.totalSemana.toLocaleString("pt-BR")}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        {/* Rodapé Informativo */}
-        <div
-          className={`p-3 text-[11px] font-medium border-t flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-            isDark
-              ? "bg-[#090d18] border-slate-800 text-slate-400"
-              : "bg-slate-50 border-slate-200 text-slate-700"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>
-              <strong>Cálculo 100% Exato:</strong> A soma das 24 horas conserva com precisão matemática o total de Inbound da API (ex: 150 plts diluídos rigorosamente).
-              {lastSync && ` Última sincronização: ${lastSync}.`}
-            </span>
+        {/* CONTAINER PRINCIPAL */}
+        <section className={`${ui.card} p-5 sm:p-6 space-y-6`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Modo de diluição">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={visualizacaoModo === "igualitaria"}
+                onClick={() => setVisualizacaoModo("igualitaria")}
+                className={ui.seg(visualizacaoModo === "igualitaria")}
+                title="Diluição uniforme entre as 24 horas"
+              >
+                Diluição igualitária (24h)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={visualizacaoModo === "ponderada"}
+                onClick={() => setVisualizacaoModo("ponderada")}
+                className={ui.seg(visualizacaoModo === "ponderada")}
+                title="Diluição ponderada pelas janelas operacionais de docas do Manhattan WMS"
+              >
+                Curva WMS
+              </button>
+            </div>
+            <button type="button" onClick={handleRecalcular} disabled={isRecalculating} className={ui.primaryBtn} title="Recalcular a distribuição horária da semana">
+              <Calculator className={`h-3.5 w-3.5 ${isRecalculating ? "animate-spin" : ""}`} />
+              Recalcular grade
+            </button>
           </div>
-          <div className="font-mono text-slate-500 dark:text-slate-400 text-right">
-            Período: {weekDays[0].labelDisplay} a {weekDays[6].labelDisplay}
-          </div>
-        </div>
+
+          {/* Aviso CD x categoria (padrão do banner de Capacidades) */}
+          {isCdCategoriaIncompativel && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+              <span className="flex items-center gap-2">
+                <Info className="h-4 w-4 shrink-0" />
+                <span>
+                  O <strong>CD {cdSelecionado}</strong> não opera a categoria <strong>{categoriaSelecionada}</strong> (homologadas:{" "}
+                  {CD_CATEGORIAS_MAP[cdSelecionado]?.join(", ")}). Todos os horários retornam 0.
+                </span>
+              </span>
+              <span className="rounded-lg bg-amber-500/15 px-2.5 py-1 font-semibold">Capacidade: 0 plts</span>
+            </div>
+          )}
+
+          {!isTableMaximized && tableBlock}
+        </section>
       </div>
+
+      {/* TELA CHEIA */}
+      {isTableMaximized && (
+        <div className={`fixed inset-0 z-50 flex flex-col p-4 md:p-6 backdrop-blur-xl ${isDark ? "bg-slate-950/95" : "bg-slate-50/95"}`}>
+          {tableBlock}
+        </div>
+      )}
     </div>
   );
 }

@@ -5,7 +5,6 @@ import Layout from "./components/Layout";
 import Capacidades from "./components/Capacidades";
 import Capacidade_Mes from "./components/Capacidade_Mes";
 import EditMonthModal from "./components/EditMonthModal";
-import DashboardAnalitico from "./components/Dsh";
 import UserControlPage from "./components/Usuarios";
 import PainelGerencial from "./components/PainelGerencial";
 import PainelRegionais from "./components/PainelRegionais";
@@ -14,6 +13,7 @@ import ManhattanCapacidades from "./components/ManhattanCapacidades";
 import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
 import PainelPFA from "./components/pfa/PainelPFA";
 import LancarRealizado from "./components/LancarRealizado";
+import Inicio, { registrarAcesso } from "./components/Inicio";
 
 // ============================================
 // 🔥 CONSTANTES DE CONFIGURAÇÃO
@@ -30,7 +30,7 @@ const STORAGE_KEYS = {
 
 // 1 hora de validade da sessão (60 minutos = 3.600.000 ms)
 const SESSION_DURATION_MS = 60 * 60 * 1000;
-const DEFAULT_PAGE = "capacidades";
+const DEFAULT_PAGE = "inicio";
 const DEFAULT_TAB = "outbound";
 const DEFAULT_THEME = "dark";
 const NOTIFICATION_DURATION = 4000;
@@ -115,7 +115,10 @@ const storageManager = {
   getCurrentPage: (): string => {
     const page = localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE) || DEFAULT_PAGE;
     // versões anteriores do PFA usavam "pfa" e "pfa-<processo>": abre no Planejamento Fim de Ano
-    return page === "pfa" || page.startsWith("pfa-") ? "pfa/planejamento/recebimento" : page;
+    if (page === "pfa" || page.startsWith("pfa-")) return "pfa/planejamento/recebimento";
+    // "Ocupação e Estoque" (dashboard) foi removido do menu
+    if (page === "dashboard") return DEFAULT_PAGE;
+    return page;
   },
 };
 
@@ -183,6 +186,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CURRENT_PAGE, currentPage);
+    registrarAcesso(currentPage); // alimenta o "Acesso rápido" da tela inicial
   }, [currentPage]);
 
   useEffect(() => {
@@ -195,8 +199,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // 🔥 GA não pode acessar Dashboard
-    if (user.role === "ga" && currentPage === "dashboard") {
+    // "Ocupação e Estoque" (dashboard) foi removido do sistema
+    if (currentPage === "dashboard") {
       setCurrentPage(DEFAULT_PAGE);
       return;
     }
@@ -412,6 +416,10 @@ export default function App() {
         theme={theme}
         onThemeToggle={toggleTheme}
       >
+        {currentPage === "inicio" && (
+          <Inicio user={user} theme={theme} onPageChange={setCurrentPage} />
+        )}
+
         {currentPage === "capacidades" && (
           <Capacidades 
             activeTab={activeTab} 
@@ -430,14 +438,6 @@ export default function App() {
           />
         )}
         
-        {currentPage === "dashboard" && (
-          <DashboardAnalitico 
-            theme={theme} 
-            showNotification={showNotification} 
-            user={user} 
-          />
-        )}
-
         {currentPage === "painel-gerencial" && (
           <PainelGerencial 
             theme={theme} 
@@ -521,4 +521,4 @@ export default function App() {
       
     </div>
   );
-}
+}

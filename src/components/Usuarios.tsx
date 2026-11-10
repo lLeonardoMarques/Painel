@@ -796,377 +796,254 @@ Média Recebido = Somatório(Recebido [em Dias Úteis]) / Quantidade_Dias_Úteis
     );
   }
 
+  // mesmo padrão visual da tela Capacidades
+  const ui = {
+    card: "rounded-2xl bg-white/70 dark:bg-slate-900/60 shadow-xs backdrop-blur-md transition-colors",
+    ghostBtn: "inline-flex h-9 items-center gap-2 rounded-xl bg-slate-500/10 hover:bg-slate-500/15 text-slate-700 dark:text-slate-200 px-3.5 text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors",
+    th: "px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 select-none",
+    td: "px-4 py-3 text-sm text-slate-700 dark:text-slate-200",
+    seg: (active: boolean) => `flex items-center gap-2 px-4 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+      active
+        ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs"
+        : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+    }`,
+  };
+  const roleChip = (role: string) =>
+    role === "ADMIN"
+      ? "bg-violet-500/10 text-violet-700 dark:text-violet-300"
+      : role === "PPCP"
+      ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      
-      {/* Mini Breadcrumb & Status indicators */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] font-medium text-slate-400">
-        <button 
-          onClick={onBack}
-          className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-            theme === 'dark' ? 'hover:text-white' : 'hover:text-slate-900'
-          }`}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Voltar ao sistema</span>
-        </button>
+    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 text-slate-900 dark:text-slate-100">
+      <div className="max-w-[1760px] mx-auto w-full space-y-6">
+        {/* CABEÇALHO */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              onClick={onBack}
+              className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer transition-colors"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Administração
+            </button>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Usuários e acessos</h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Aprovação e gerenciamento de perfis de operadores internos.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={handleDownloadDocumentation} className={ui.ghostBtn}>
+              <Download className="h-3.5 w-3.5" />
+              <span>Manual técnico</span>
+            </button>
+            <button type="button" onClick={fetchAllData} disabled={loading || loadingUsers} className={ui.ghostBtn}>
+              <RefreshCw className={`h-3.5 w-3.5 ${(loading || loadingUsers) ? "animate-spin" : ""}`} />
+              <span>Atualizar dados</span>
+            </button>
+          </div>
+        </header>
 
-        <div className="flex items-center gap-4">
-          {/* Status Badge */}
-          <div className="flex items-center gap-1.5">
-            
+        {/* CONTAINER PRINCIPAL */}
+        <section className={`${ui.card} p-5 sm:p-6 space-y-6`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Situação">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "pending"}
+                onClick={() => { setActiveTab("pending"); setSearchTerm(""); }}
+                className={ui.seg(activeTab === "pending")}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Pendentes</span>
+                <span className="font-mono text-[10px] opacity-70">{pendingUsers.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "users"}
+                onClick={() => { setActiveTab("users"); setSearchTerm(""); }}
+                className={ui.seg(activeTab === "users")}
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span>Ativos</span>
+                <span className="font-mono text-[10px] opacity-70">{approvedUsers.length}</span>
+              </button>
+            </div>
 
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:inline text-xs text-slate-500 dark:text-slate-400 font-mono">
+                {filteredUsers.length} registros
+              </span>
+              <div className="relative w-64 max-w-full">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome, ID ou e-mail..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-xl bg-slate-500/5 dark:bg-slate-500/10 hover:bg-slate-500/10 dark:hover:bg-slate-500/15 pl-9 pr-3.5 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-colors border-0"
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Toggle Button for manual fallback test */}
-          
-        </div>
-      </div>
+          {/* AVISOS */}
+          {error && (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span><strong className="font-semibold">Conectividade:</strong> {error}</span>
+            </div>
+          )}
+          {successMsg && (
+            <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-3 text-xs text-emerald-800 dark:text-emerald-300">
+              <Check className="h-4 w-4 shrink-0" />
+              <span className="font-medium">{successMsg}</span>
+            </div>
+          )}
 
-      {/* Header and Sync Control */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className={`text-xl font-bold tracking-tight ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-            Controle de Acessos
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Aprovação e gerenciamento de perfis de operadores internos.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleDownloadDocumentation}
-            className={`py-2 px-3.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
-              theme === 'dark'
-                ? 'border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'
-                : 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Baixar Manual Técnico</span>
-          </button>
-
-          <button
-            onClick={fetchAllData}
-            disabled={loading || loadingUsers}
-            className={`py-2 px-3.5 rounded-xl border text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
-              theme === 'dark' 
-                ? 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-200' 
-                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${(loading || loadingUsers) ? 'animate-spin' : ''}`} />
-            <span>Sincronizar</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Alerts */}
-      {error && (
-        <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 backdrop-blur-sm ${
-          theme === 'dark' ? 'bg-rose-500/5 border-rose-500/10 text-rose-400' : 'bg-rose-50 border-rose-100 text-rose-700'
-        }`}>
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="leading-relaxed">
-            <span className="font-bold">Nota de Conectividade:</span> {error}
-          </div>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
-          theme === 'dark' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-700'
-        }`}>
-          <Check className="w-4 h-4 shrink-0" />
-          <span className="font-medium">{successMsg}</span>
-        </div>
-      )}
-
-      {/* Segmented Control Filter Row */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-        {/* Navigation Tabs (Premium Segmented Control) */}
-        <div className={`flex p-0.5 rounded-xl max-w-sm w-full ${
-          theme === 'dark' ? 'bg-[#0f1423]' : 'bg-slate-100'
-        }`}>
-          <button
-            onClick={() => {
-              setActiveTab("pending");
-              setSearchTerm("");
-            }}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === "pending"
-                ? theme === 'dark' 
-                  ? "bg-white/10 text-white font-bold"
-                  : "bg-white text-slate-900 font-bold shadow-sm"
-                : "text-slate-400 hover:text-slate-300"
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Pendentes ({pendingUsers.length})</span>
-          </button>
-          
-          <button
-            onClick={() => {
-              setActiveTab("users");
-              setSearchTerm("");
-            }}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === "users"
-                ? theme === 'dark' 
-                  ? "bg-white/10 text-white font-bold"
-                  : "bg-white text-slate-900 font-bold shadow-sm"
-                : "text-slate-400 hover:text-slate-300"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Ativos ({approvedUsers.length})</span>
-          </button>
-        </div>
-
-        {/* Filter input */}
-        <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 flex-1 max-w-xs ${
-          theme === 'dark' ? 'bg-[#0a0f1d] border-white/5' : 'bg-white border-slate-200 shadow-sm'
-        }`}>
-          <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Pesquisar..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className={`w-full bg-transparent border-none text-xs focus:outline-none placeholder-slate-400 ${
-              theme === 'dark' ? 'text-white' : 'text-slate-800'
-            }`}
-          />
-        </div>
-      </div>
-
-      {/* Main List Container */}
-      {isLoading ? (
-        <div className={`flex flex-col items-center justify-center py-20 gap-3 rounded-2xl border ${
-          theme === 'dark' ? 'border-white/5 bg-white/2' : 'border-slate-200 bg-white shadow-sm'
-        }`}>
-          <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-            Sincronizando operadores...
-          </p>
-        </div>
-      ) : filteredUsers.length === 0 ? (
-        <div className={`p-12 text-center rounded-2xl border flex flex-col items-center justify-center ${
-          theme === 'dark' ? 'bg-[#0a0f1d]/40 border-white/5' : 'bg-white border-slate-200 shadow-sm'
-        }`}>
-          <div className={`p-3 rounded-full mb-3 ${theme === 'dark' ? 'bg-slate-900 text-slate-500' : 'bg-slate-50 text-slate-400'}`}>
-            {activeTab === "pending" ? <Clock className="w-6 h-6" /> : <Users className="w-6 h-6" />}
-          </div>
-          <h3 className={`text-sm font-bold ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
-            {searchTerm ? "Nenhum resultado" : activeTab === "pending" ? "Tudo sob controle" : "Nenhum operador ativo"}
-          </h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
-            {searchTerm 
-              ? "Experimente mudar o termo de pesquisa ou verificar possíveis erros ortográficos." 
-              : activeTab === "pending" 
-                ? "Não há nenhuma solicitação de primeiro acesso pendente de validação no momento."
-                : "Ainda não existem usuários catalogados com perfil ativo."
-            }
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {/* List stats */}
-          <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-slate-500 px-1">
-            <span>Visualizando {filteredUsers.length} registros</span>
-            <span>status: {activeTab === "pending" ? "Análise pendente" : "Homologados"}</span>
-          </div>
-
-          {/* High-density professional responsive corporate table list layout */}
-          <div className={`overflow-x-auto rounded-xl border transition-all duration-200 ${
-            theme === 'dark' 
-              ? 'bg-[#0b0f19]/60 border-slate-800/60 shadow-[0_4px_25px_rgba(0,0,0,0.3)]' 
-              : 'bg-white border-slate-200/80 shadow-[0_4px_20px_rgba(148,163,184,0.04)]'
-          }`}>
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead>
-                <tr className={`border-b text-[10px] uppercase tracking-widest font-extrabold text-slate-400 ${
-                  theme === 'dark' ? 'border-slate-800/50 bg-[#0e1423]/70' : 'border-slate-100 bg-slate-50/60'
-                }`}>
-                  <th className="py-3 px-5">Operador / Status</th>
-                  <th className="py-3 px-5">Registro ID</th>
-                  <th className="py-3 px-5">E-mail</th>
-                  <th className="py-3 px-5">Perfil Atual</th>
-                  <th className="py-3 px-5">Atribuir Perfil</th>
-                  <th className="py-3 px-5 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/35">
-                {filteredUsers.map((reg) => (
-                  <tr 
-                    key={reg.id}
-                    className={`transition-colors text-xs ${
-                      theme === 'dark' 
-                        ? 'hover:bg-slate-800/10' 
-                        : 'hover:bg-slate-50/50'
-                    }`}
-                  >
-                    {/* Operador / Status */}
-                    <td className="py-3.5 px-5">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg shrink-0 ${
-                          theme === 'dark' ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500'
-                        }`}>
-                          <UserCog className="w-4 h-4" />
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <span className={`font-bold truncate max-w-[180px] ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>
-                            {reg.name}
-                          </span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className={`w-1 h-1 rounded-full ${activeTab === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
-                            <span className={`text-[9px] font-bold tracking-wider font-mono uppercase ${activeTab === 'pending' ? 'text-amber-500' : 'text-emerald-500'}`}>
-                              {reg.status}
-                            </span>
+          {/* TABELA */}
+          {isLoading ? (
+            <div className="py-20 text-center text-sm text-slate-500 dark:text-slate-400">Sincronizando operadores...</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="py-16 flex flex-col items-center text-center">
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-500/10 text-slate-400">
+                {activeTab === "pending" ? <Clock className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+              </div>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                {searchTerm ? "Nenhum resultado" : activeTab === "pending" ? "Tudo sob controle" : "Nenhum operador ativo"}
+              </h3>
+              <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                {searchTerm
+                  ? "Experimente mudar o termo de pesquisa."
+                  : activeTab === "pending"
+                  ? "Não há solicitações de primeiro acesso pendentes no momento."
+                  : "Ainda não existem usuários com perfil ativo."}
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-[620px] overflow-auto">
+              <table className="w-full min-w-[860px] text-left border-separate border-spacing-y-1">
+                <thead className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md">
+                  <tr>
+                    <th className={`${ui.th} rounded-l-xl`}>Operador</th>
+                    <th className={ui.th}>Registro</th>
+                    <th className={ui.th}>E-mail</th>
+                    <th className={ui.th}>Perfil atual</th>
+                    <th className={ui.th}>Atribuir perfil</th>
+                    <th className={`${ui.th} text-right rounded-r-xl`}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((reg) => (
+                    <tr key={reg.id} className="bg-slate-500/[0.04] dark:bg-slate-500/[0.07] hover:bg-slate-500/[0.08] dark:hover:bg-slate-500/[0.12] transition-colors">
+                      <td className={`${ui.td} rounded-l-xl`}>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            {String(reg.name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate max-w-[200px] font-semibold text-slate-900 dark:text-slate-100">{reg.name}</div>
+                            <div className="mt-0.5 flex items-center gap-1.5">
+                              <span className={`h-1.5 w-1.5 rounded-full ${activeTab === "pending" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                              <span className={`text-[10px] font-semibold uppercase tracking-wider ${activeTab === "pending" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                {reg.status}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-
-                    {/* Registro ID */}
-                    <td className="py-3.5 px-5 font-mono font-extrabold text-[11px] text-slate-500 dark:text-slate-400">
-                      {reg.login}
-                    </td>
-
-                    {/* E-mail */}
-                    <td className="py-3.5 px-5 text-slate-500 dark:text-slate-400 font-medium">
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                        <span className="truncate max-w-[200px]" title={reg.email}>{reg.email}</span>
-                      </div>
-                    </td>
-
-                    {/* Perfil Atual */}
-                    <td className="py-3.5 px-5">
-                      {activeTab === "users" ? (
-                        <span className={`font-mono font-black text-[9px] px-2 py-0.5 rounded uppercase ${
-                          normalizeRole(reg.role) === "ADMIN" ? "bg-purple-500/15 text-purple-400 border border-purple-500/20" :
-                          normalizeRole(reg.role) === "PPCP" ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" :
-                          "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-                        }`}>
-                          {normalizeRole(reg.role)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-[10px] font-semibold tracking-wider uppercase font-mono">Pendente</span>
-                      )}
-                    </td>
-
-                    {/* Atribuir Perfil */}
-                    <td className="py-3.5 px-5">
-                      <select
-                        value={selectedRoles[reg.id] || "GA"}
-                        onChange={(e) => setSelectedRoles(prev => ({
-                          ...prev,
-                          [reg.id]: e.target.value as "ADMIN" | "PPCP" | "GA"
-                        }))}
-                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500/15 cursor-pointer transition-all ${
-                          theme === 'dark' 
-                            ? 'border-slate-800 bg-[#0e1423] text-slate-200 focus:border-blue-500/40' 
-                            : 'border-slate-200 bg-slate-50 text-slate-700 focus:border-blue-500/30'
-                        }`}
-                      >
-                        <option value="ADMIN">👑 ADMIN</option>
-                        <option value="PPCP">📊 PPCP</option>
-                        <option value="GA">📦 GA</option>
-                      </select>
-                    </td>
-
-                    {/* Ações */}
-                    <td className="py-3.5 px-5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {activeTab === "pending" ? (
-                          <>
-                            <button
-                              onClick={() => handleUpdateUser(reg.id, "RECUSADO")}
-                              disabled={actionLoadingId !== null}
-                              className={`px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors ${
-                                theme === 'dark'
-                                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/10'
-                                  : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100'
-                              }`}
-                              title="Recusar operador"
-                            >
-                              {actionLoadingId === reg.id ? (
-                                <div className={`w-3 h-3 border-2 rounded-full animate-spin ${
-                                  theme === 'dark' ? 'border-rose-400/30 border-t-rose-400' : 'border-rose-600/30 border-t-rose-600'
-                                }`} />
-                              ) : (
-                                <>
-                                  <XCircle className="w-3.5 h-3.5" />
-                                  <span>Recusar</span>
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              onClick={() => handleUpdateUser(reg.id, "APROVADO")}
-                              disabled={actionLoadingId !== null}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 shadow-sm transition-colors"
-                              title="Aprovar operador"
-                            >
-                              {actionLoadingId === reg.id ? (
-                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              ) : (
-                                <>
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                  <span>Aprovar</span>
-                                </>
-                              )}
-                            </button>
-                          </>
+                      </td>
+                      <td className={`${ui.td} font-mono text-xs text-slate-600 dark:text-slate-400`}>{reg.login}</td>
+                      <td className={`${ui.td} text-slate-600 dark:text-slate-400`}>
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                          <span className="truncate max-w-[220px]" title={reg.email}>{reg.email}</span>
+                        </div>
+                      </td>
+                      <td className={ui.td}>
+                        {activeTab === "users" ? (
+                          <span className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold ${roleChip(normalizeRole(reg.role))}`}>
+                            {normalizeRole(reg.role)}
+                          </span>
                         ) : (
-                          <>
-                            <button
-                              onClick={() => handleUpdateUser(reg.id, "PENDENTE")}
-                              disabled={actionLoadingId !== null}
-                              className={`p-1.5 rounded-lg flex items-center justify-center cursor-pointer disabled:opacity-40 transition-colors ${
-                                theme === 'dark'
-                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/10'
-                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100'
-                              }`}
-                              title="Retornar para pendências"
-                            >
-                              {actionLoadingId === reg.id ? (
-                                <div className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${
-                                  theme === 'dark' ? 'border-amber-400/30 border-t-amber-400' : 'border-amber-600/30 border-t-amber-600'
-                                }`} />
-                              ) : (
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-
-                            <button
-                              onClick={() => handleUpdateUser(reg.id, "APROVADO", selectedRoles[reg.id])}
-                              disabled={actionLoadingId !== null}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 shadow-sm transition-colors"
-                              title="Atualizar privilégios"
-                            >
-                              {actionLoadingId === reg.id ? (
-                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              ) : (
-                                <>
-                                  <Sliders className="w-3.5 h-3.5" />
-                                  <span>Atualizar</span>
-                                </>
-                              )}
-                            </button>
-                          </>
+                          <span className="text-xs text-slate-400">—</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+                      </td>
+                      <td className={ui.td}>
+                        <select
+                          value={selectedRoles[reg.id] || "GA"}
+                          onChange={(e) => setSelectedRoles(prev => ({
+                            ...prev,
+                            [reg.id]: e.target.value as "ADMIN" | "PPCP" | "GA"
+                          }))}
+                          className="rounded-lg bg-slate-500/10 hover:bg-slate-500/15 px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-100 border-0 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer transition-colors"
+                        >
+                          <option value="ADMIN" className={theme === "dark" ? "bg-slate-900" : ""}>Administrador</option>
+                          <option value="PPCP" className={theme === "dark" ? "bg-slate-900" : ""}>PPCP</option>
+                          <option value="GA" className={theme === "dark" ? "bg-slate-900" : ""}>Gestão de agenda</option>
+                        </select>
+                      </td>
+                      <td className={`${ui.td} text-right rounded-r-xl`}>
+                        <div className="flex items-center justify-end gap-2">
+                          {activeTab === "pending" ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateUser(reg.id, "RECUSADO")}
+                                disabled={actionLoadingId !== null}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 px-2.5 text-xs font-semibold text-rose-700 dark:text-rose-400 disabled:opacity-40 cursor-pointer transition-colors"
+                                title="Recusar operador"
+                              >
+                                {actionLoadingId === reg.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                                Recusar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateUser(reg.id, "APROVADO")}
+                                disabled={actionLoadingId !== null}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 text-xs font-semibold text-white shadow-xs disabled:opacity-40 cursor-pointer transition-colors"
+                                title="Aprovar operador"
+                              >
+                                {actionLoadingId === reg.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                                Aprovar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateUser(reg.id, "PENDENTE")}
+                                disabled={actionLoadingId !== null}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 disabled:opacity-40 cursor-pointer transition-colors"
+                                title="Retornar para pendências"
+                              >
+                                <RefreshCw className={`h-3.5 w-3.5 ${actionLoadingId === reg.id ? "animate-spin" : ""}`} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateUser(reg.id, "APROVADO", selectedRoles[reg.id])}
+                                disabled={actionLoadingId !== null}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 text-xs font-semibold text-white shadow-xs disabled:opacity-40 cursor-pointer transition-colors"
+                                title="Atualizar privilégios"
+                              >
+                                {actionLoadingId === reg.id ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sliders className="h-3.5 w-3.5" />}
+                                Atualizar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
 
       {/* Embedded Animations style */}
       <style>{`
@@ -1180,4 +1057,4 @@ Média Recebido = Somatório(Recebido [em Dias Úteis]) / Quantidade_Dias_Úteis
       `}</style>
     </div>
   );
-}
+}

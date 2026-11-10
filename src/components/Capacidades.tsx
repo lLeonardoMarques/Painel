@@ -332,8 +332,8 @@ export default function Capacidades({
   };
 
   return (
-    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 space-y-6 text-slate-900 dark:text-slate-100">
-      <div className="max-w-7xl mx-auto w-full space-y-6">
+    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 space-y-6 text-slate-900 dark:text-slate-100">
+      <div className="max-w-[1760px] mx-auto w-full space-y-6">
         
         {/* CABEÇALHO SÉRIO E DISCRETO */}
         <header className="flex flex-wrap items-start justify-between gap-4">

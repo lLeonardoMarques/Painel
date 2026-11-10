@@ -25,23 +25,46 @@
   }
 }
 
-/* Custom scrollbar styling for dashboard */
+/* Barras de rolagem discretas, nos dois temas */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(30, 41, 59, 0.5);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(59, 130, 246, 0.4);
-  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(59, 130, 246, 0.6);
+  background: rgba(100, 116, 139, 0.55);
+  background-clip: padding-box;
+}
+
+/* Menu lateral: a barra só aparece ao passar o mouse */
+.sidebar-scroll {
+  scrollbar-color: transparent transparent;
+}
+.sidebar-scroll:hover {
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  background-clip: padding-box;
 }
 
 /* Smooth fade-in effects */
@@ -52,4 +75,4 @@
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
-}
+}

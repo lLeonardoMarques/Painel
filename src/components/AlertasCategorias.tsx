@@ -581,618 +581,340 @@ _Portal Logística GPA 2026_`;
     if (showNotification) showNotification("📋 Resumo copiado para área de transferência!");
   };
 
+  // ============================================================
+  // ESTILOS (mesmo padrão visual da tela Capacidades)
+  // ============================================================
+  const ui = {
+    card: "rounded-2xl bg-white/70 dark:bg-slate-900/60 shadow-xs backdrop-blur-md transition-colors",
+    select: "w-full rounded-xl bg-slate-500/5 dark:bg-slate-500/10 hover:bg-slate-500/10 dark:hover:bg-slate-500/15 px-3.5 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-colors cursor-pointer border-0",
+    label: "mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300",
+    labelIcon: "h-3.5 w-3.5 text-slate-400 dark:text-slate-500",
+    ghostBtn: "inline-flex h-9 items-center gap-2 rounded-xl bg-slate-500/10 hover:bg-slate-500/15 text-slate-700 dark:text-slate-200 px-3.5 text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors",
+    th: "px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 select-none whitespace-nowrap",
+    td: "px-4 py-3 text-sm text-slate-700 dark:text-slate-200",
+    chip: "whitespace-nowrap px-2 py-0.5 rounded-md text-xs font-medium bg-slate-500/10 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300",
+  };
+  const optionClass = isDark ? "bg-slate-900 text-slate-100" : "";
+  const hasActiveFilters =
+    filtroAlerta !== "TODOS" || filtroCategoriaRuas !== "TODAS" || filtroCategoriaItem !== "TODAS" || !!buscaPlu;
+
+  const SortTh = ({ field, label, align = "left", first, last }: { field: string; label: string; align?: "left" | "right" | "center"; first?: boolean; last?: boolean }) => (
+    <th className={`${ui.th} ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"} ${first ? "rounded-l-xl" : ""} ${last ? "rounded-r-xl" : ""}`}>
+      <button
+        type="button"
+        onClick={() => handleSort(field as any)}
+        className={`inline-flex items-center gap-1 uppercase tracking-[0.12em] hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer transition-colors ${
+          align === "right" ? "flex-row-reverse" : ""
+        }`}
+      >
+        <span>{label}</span>
+        <ArrowUpDown className="w-3 h-3 opacity-60" />
+      </button>
+    </th>
+  );
+
+  const kpiCards = [
+    {
+      label: "Total de paletes",
+      icon: Boxes,
+      value: stats.totalPlt.toLocaleString("pt-BR"),
+      hint: `${stats.totalItens.toLocaleString("pt-BR")} registros no filtro`,
+      tone: "text-slate-900 dark:text-slate-100",
+    },
+    {
+      label: "Categorias corretas",
+      icon: ShieldCheck,
+      value: stats.totalPltCorreto.toLocaleString("pt-BR"),
+      hint: `${stats.pctPltCorreto}% · ${stats.totalRuasOk.toLocaleString("pt-BR")} itens com rua OK`,
+      tone: "text-emerald-700 dark:text-emerald-400",
+    },
+    {
+      label: "Paletes em categoria errada",
+      icon: ShieldAlert,
+      value: stats.totalPltErrado.toLocaleString("pt-BR"),
+      hint: `${stats.pctPltErrado}% · ${stats.totalRuasErradas.toLocaleString("pt-BR")} itens divergentes`,
+      tone: "text-rose-700 dark:text-rose-400",
+    },
+    {
+      label: "% paletes errados",
+      icon: Percent,
+      value: `${stats.pctPltErrado}%`,
+      hint: "divergência de volume",
+      tone: Number(stats.pctPltErrado) > 0 ? "text-rose-700 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400",
+      bar: Math.min(100, Math.max(0, Number(stats.pctPltErrado))),
+    },
+  ];
+
   return (
-    <div
-      className={`min-h-full w-full flex flex-col p-4 md:p-6 transition-colors duration-200 ${
-        isDark ? "bg-[#070b14] text-slate-100" : "bg-[#f8fafc] text-slate-950"
-      }`}
-    >
-      {/* ============================================================
-          CABEÇALHO PRINCIPAL
-          ============================================================ */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-300 dark:border-slate-800/80">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl md:text-2xl font-black text-slate-950 dark:text-white tracking-tight">
-                  Alerta Categorias
-                </h1>
-                {/* <span className="px-2.5 py-0.5 text-[10px] font-black font-mono uppercase rounded-full bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30">
-                  {stats.totalRuasErradas} Ruas com Alerta
-                </span> */}
-              </div>
-              {/* <p className="text-xs text-slate-700 dark:text-slate-400 font-semibold">
-                Auditoria de alocação de itens por ruas e validação de categorias (API http://10.210.2.131:3333/api/alertas)
-              </p> */}
-            </div>
+    <div className="w-full flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 text-slate-900 dark:text-slate-100">
+      <div className="max-w-[1760px] mx-auto w-full space-y-6">
+        {/* CABEÇALHO */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Análise e monitoramento
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              Alertas de categorias
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Auditoria da alocação de itens por rua e validação de categorias.
+            </p>
           </div>
-        </div>
-
-        {/* Informações de Carga & Botões de Ação */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Badge Otimização de Sessão (1x por login) */}
-          <div
-            
-          >
-            
-            
-            
-           
-          </div>
-
-          {/* Copiar Resumo */}
-          
-          {/* Exportar Excel */}
-          <button
-            onClick={handleExportExcel}
-            className="px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white transition-all shadow-xs cursor-pointer border border-emerald-600"
-            title="Exportar tabela atualizada para Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Exportar Excel</span>
-          </button>
-
-          {/* Forçar Atualização Manual */}
-          <button
-            onClick={() => fetchAlertas(true)}
-            disabled={isRefreshing}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-              isDark
-                ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
-                : "bg-white hover:bg-slate-100 text-slate-900 border-slate-300 shadow-xs"
-            }`}
-            title="Recarregar base completa da API externa"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-blue-600" : "text-slate-800 dark:text-slate-300"}`} />
-            <span>{isRefreshing ? "Buscando..." : "Atualizar"}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ============================================================
-          CARDS DE KPI SOLICITADOS:
-          1. Total de Paletes
-          2. Paletes em Categorias Corretas
-          3. PLTs em Categorias Erradas
-          4. Percentual de Paletes Errados
-          (Todos respeitando os filtros de alerta, categoria ruas, categoria item e busca)
-          ============================================================ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 py-4">
-        {/* CARD 1: Total de Paletes */}
-        <div
-          className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-            isDark ? "bg-[#0e1424] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-400">
-              Total de Paletes
-            </span>
-            <div className="p-1.5 rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-400 border border-blue-200 dark:border-transparent">
-              <Boxes className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">
-              {stats.totalPlt.toLocaleString("pt-BR")}
-            </span>
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-400">
-              paletes totais
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-400 truncate font-semibold">
-            <strong className="text-slate-950 dark:text-slate-200 font-black">{stats.totalItens.toLocaleString("pt-BR")}</strong> registros no filtro ativo
-          </div>
-        </div>
-
-        {/* CARD 2: Quantos Paletes Estão nas Categorias Corretas */}
-        <div
-          className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-            isDark ? "bg-[#0e1424] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-400">
-              Categorias Corretas
-            </span>
-            <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border border-emerald-200 dark:border-transparent">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-black text-emerald-800 dark:text-emerald-400 tracking-tight">
-              {stats.totalPltCorreto.toLocaleString("pt-BR")}
-            </span>
-            <span className="text-[11px] font-black text-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/30">
-              {stats.pctPltCorreto}%
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-400 truncate font-semibold">
-            <strong className="text-emerald-800 dark:text-emerald-300 font-black">{stats.totalRuasOk.toLocaleString("pt-BR")}</strong> itens conformados (Rua OK)
-          </div>
-        </div>
-
-        {/* CARD 3: PLTs em Categorias Erradas */}
-        <div
-          className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-            isDark ? "bg-[#0e1424] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-400">
-              PLTs em Categorias Erradas
-            </span>
-            <div className="p-1.5 rounded-lg bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-400 border border-rose-200 dark:border-transparent">
-              <ShieldAlert className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-black text-rose-800 dark:text-rose-400 tracking-tight">
-              {stats.totalPltErrado.toLocaleString("pt-BR")}
-            </span>
-            <span className="text-[11px] font-black text-rose-800 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800/30">
-              {stats.pctPltErrado}%
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-400 truncate font-semibold">
-            <strong className="text-rose-800 dark:text-rose-300 font-black">{stats.totalRuasErradas.toLocaleString("pt-BR")}</strong> itens em ruas divergentes
-          </div>
-        </div>
-
-        {/* CARD 4: Percentual de Paletes Errados */}
-        <div
-          className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-            isDark ? "bg-[#0e1424] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-400">
-              % Paletes Errados
-            </span>
-            <div className={`p-1.5 rounded-lg border ${
-              Number(stats.pctPltErrado) > 0
-                ? "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-500/15 dark:text-rose-400 dark:border-transparent"
-                : "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-transparent"
-            }`}>
-              <Percent className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-3xl font-black tracking-tight ${
-              Number(stats.pctPltErrado) > 0
-                ? "text-rose-800 dark:text-rose-400"
-                : "text-emerald-800 dark:text-emerald-400"
-            }`}>
-              {stats.pctPltErrado}%
-            </span>
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-400">
-              divergência de volume
-            </span>
-          </div>
-          {/* Barra de progresso visual */}
-          <div className="mt-2 w-full">
-            <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-300 rounded-full ${
-                  Number(stats.pctPltErrado) > 0
-                    ? "bg-rose-600"
-                    : "bg-emerald-600"
-                }`}
-                style={{ width: `${Math.min(100, Math.max(0, Number(stats.pctPltErrado)))}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================
-          BARRA DE FILTROS SOLICITADOS:
-          - Alerta Rua OK ou Rua Errada
-          - Categoria Ruas
-          - Categoria Item
-          - Busca por PLU / Descrição
-          ============================================================ */}
-      <div
-        className={`p-3.5 rounded-xl border mb-4 flex flex-col gap-3 ${
-          isDark ? "bg-[#0c1220] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-        }`}
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          {/* 1. Busca por PLU / Descrição */}
-          <div className="relative min-w-[220px] flex-1 max-w-sm">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por PLU (ex: 106498) ou Descrição..."
-              value={buscaPlu}
-              onChange={(e) => setBuscaPlu(e.target.value)}
-              className={`w-full pl-8.5 pr-3 py-1.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                isDark
-                  ? "bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500"
-                  : "bg-white border-slate-300 text-slate-950 placeholder-slate-500 shadow-xs"
-              }`}
-            />
-            {buscaPlu && (
-              <button
-                onClick={() => setBuscaPlu("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-950 text-xs font-bold"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          {/* 2. Filtro Alerta Rua: Todos | Rua OK | Rua Errada */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-black text-slate-900 dark:text-slate-300 uppercase">Alerta:</span>
-            <div
-              className={`flex items-center p-0.5 rounded-lg border ${
-                isDark ? "bg-slate-900 border-slate-800" : "bg-slate-100 border-slate-300"
-              }`}
-            >
-              <button
-                onClick={() => setFiltroAlerta("TODOS")}
-                className={`px-2.5 py-1 text-[11px] font-black rounded-md transition-colors cursor-pointer ${
-                  filtroAlerta === "TODOS"
-                    ? "bg-blue-700 text-white shadow-xs"
-                    : "text-slate-800 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white"
-                }`}
-              >
-                Todos ({alertCounts.todos})
-              </button>
-              <button
-                onClick={() => setFiltroAlerta("ERRADA")}
-                className={`px-2.5 py-1 text-[11px] font-black rounded-md transition-colors cursor-pointer ${
-                  filtroAlerta === "ERRADA"
-                    ? "bg-rose-700 text-white shadow-xs"
-                    : "text-rose-800 dark:text-rose-400 hover:text-rose-950 dark:hover:text-rose-300"
-                }`}
-              >
-                ⚠️ Rua Errada ({alertCounts.erradas})
-              </button>
-              <button
-                onClick={() => setFiltroAlerta("OK")}
-                className={`px-2.5 py-1 text-[11px] font-black rounded-md transition-colors cursor-pointer ${
-                  filtroAlerta === "OK"
-                    ? "bg-emerald-700 text-white shadow-xs"
-                    : "text-emerald-800 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-emerald-300"
-                }`}
-              >
-                ✓ Rua OK ({alertCounts.ok})
-              </button>
-            </div>
-          </div>
-
-          {/* 3. Filtro Categoria Ruas */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-black text-slate-900 dark:text-slate-300 uppercase">Cat. Ruas:</span>
-            <select
-              value={filtroCategoriaRuas}
-              onChange={(e) => setFiltroCategoriaRuas(e.target.value)}
-              className={`px-2.5 py-1.5 text-xs font-black rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${
-                isDark ? "bg-slate-900 border-slate-700 text-slate-200" : "bg-white border-slate-300 text-slate-950 shadow-xs"
-              }`}
-            >
-              <option value="TODAS">Todas as Categorias de Ruas</option>
-              {listaCategoriasRuas.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 4. Filtro Categoria Item */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-black text-slate-900 dark:text-slate-300 uppercase">Cat. Item:</span>
-            <select
-              value={filtroCategoriaItem}
-              onChange={(e) => setFiltroCategoriaItem(e.target.value)}
-              className={`px-2.5 py-1.5 text-xs font-black rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${
-                isDark ? "bg-slate-900 border-slate-700 text-slate-200" : "bg-white border-slate-300 text-slate-950 shadow-xs"
-              }`}
-            >
-              <option value="TODAS">Todas as Categorias de Item</option>
-              {listaCategoriasItem.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Botão Limpar Filtros */}
-          {(filtroAlerta !== "TODOS" ||
-            filtroCategoriaRuas !== "TODAS" ||
-            filtroCategoriaItem !== "TODAS" ||
-            buscaPlu) && (
-            <button
-              onClick={() => {
-                setFiltroAlerta("TODOS");
-                setFiltroCategoriaRuas("TODAS");
-                setFiltroCategoriaItem("TODAS");
-                setBuscaPlu("");
-              }}
-              className="text-xs text-blue-700 dark:text-blue-400 hover:underline font-black cursor-pointer"
-            >
-              Limpar filtros
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={handleCopySummary} className={ui.ghostBtn} title="Copiar resumo das ruas com divergência">
+              {copiedSummary ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+              <span>{copiedSummary ? "Copiado" : "Copiar resumo"}</span>
             </button>
-          )}
-        </div>
-      </div>
+            <button type="button" onClick={handleExportExcel} className={ui.ghostBtn} title="Exportar tabela para Excel (.xlsx)">
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              <span>Exportar Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fetchAlertas(true)}
+              disabled={isRefreshing}
+              className={ui.ghostBtn}
+              title="Recarregar base completa da API"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span>{isRefreshing ? "Atualizando..." : "Atualizar dados"}</span>
+            </button>
+          </div>
+        </header>
 
-      {/* ============================================================
-          TABELA PRINCIPAL:
-          Colunas: PLU | Descrição | Soma de plt | Categoria Ruas | Categoria Item | Altura | Rua | Alertas
-          ============================================================ */}
-      <div
-        className={`rounded-xl border overflow-hidden flex flex-col flex-1 ${
-          isDark ? "bg-[#0c1220] border-slate-800" : "bg-white border-slate-300 shadow-xs"
-        }`}
-      >
-        <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr
-                className={`border-b text-[11px] font-black uppercase tracking-wider ${
-                  isDark
-                    ? "bg-slate-900/90 border-slate-800 text-slate-300"
-                    : "bg-slate-100 border-slate-300 text-slate-950"
-                }`}
+        {/* FILTROS */}
+        <section className={`${ui.card} p-4 sm:p-5`}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <label className="block">
+              <span className={ui.label}><Search className={ui.labelIcon} /> Buscar</span>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="PLU (ex: 106498) ou descrição..."
+                  value={buscaPlu}
+                  onChange={(e) => setBuscaPlu(e.target.value)}
+                  className={`${ui.select} cursor-text placeholder:text-slate-400 dark:placeholder:text-slate-500 pr-8`}
+                />
+                {buscaPlu && (
+                  <button
+                    type="button"
+                    onClick={() => setBuscaPlu("")}
+                    aria-label="Limpar busca"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm cursor-pointer"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </label>
+            <label className="block">
+              <span className={ui.label}><Building2 className={ui.labelIcon} /> Categoria da rua</span>
+              <select value={filtroCategoriaRuas} onChange={(e) => setFiltroCategoriaRuas(e.target.value)} className={ui.select}>
+                <option value="TODAS" className={optionClass}>Todas as categorias de rua</option>
+                {listaCategoriasRuas.map((cat) => (
+                  <option key={cat} value={cat} className={optionClass}>{cat}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className={ui.label}><Layers className={ui.labelIcon} /> Categoria do item</span>
+              <select value={filtroCategoriaItem} onChange={(e) => setFiltroCategoriaItem(e.target.value)} className={ui.select}>
+                <option value="TODAS" className={optionClass}>Todas as categorias de item</option>
+                {listaCategoriasItem.map((cat) => (
+                  <option key={cat} value={cat} className={optionClass}>{cat}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
+
+        {/* CONTAINER PRINCIPAL */}
+        <section className={`${ui.card} p-5 sm:p-6 space-y-6`}>
+          {/* SEGMENTED CONTROL + STATUS */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Filtro de alerta">
+              {([
+                ["TODOS", "Todos", alertCounts.todos, null],
+                ["ERRADA", "Rua errada", alertCounts.erradas, "bg-rose-500"],
+                ["OK", "Rua OK", alertCounts.ok, "bg-emerald-500"],
+              ] as const).map(([key, label, count, dot]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={filtroAlerta === key}
+                  onClick={() => setFiltroAlerta(key)}
+                  className={`flex items-center gap-2 px-4 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    filtroAlerta === key
+                      ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}
+                  <span>{label}</span>
+                  <span className="font-mono text-[10px] opacity-70">{count}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroAlerta("TODOS");
+                    setFiltroCategoriaRuas("TODAS");
+                    setFiltroCategoriaItem("TODAS");
+                    setBuscaPlu("");
+                  }}
+                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  Limpar filtros
+                </button>
+              )}
+              <span className="font-mono">
+                {sortedData.length.toLocaleString("pt-BR")} registros · atualizado {lastFetchTime}
+              </span>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {kpiCards.map((k) => (
+              <div
+                key={k.label}
+                className="p-4 rounded-xl bg-slate-500/[0.04] dark:bg-slate-500/[0.08] hover:bg-slate-500/[0.07] dark:hover:bg-slate-500/[0.12] transition-colors"
               >
-                {/* 1. PLU */}
-                <th className="py-3 px-3.5">
-                  <button
-                    onClick={() => handleSort("plu")}
-                    className="flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>PLU</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  <k.icon className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                  <span>{k.label}</span>
+                </div>
+                <div className={`mt-2 font-mono text-xl sm:text-2xl font-bold tracking-tight tabular-nums ${k.tone}`}>{k.value}</div>
+                {"bar" in k && k.bar !== undefined ? (
+                  <div className="mt-2 h-1.5 w-full rounded-full bg-slate-500/15 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${Number(stats.pctPltErrado) > 0 ? "bg-rose-500" : "bg-emerald-500"}`}
+                      style={{ width: `${k.bar}%` }}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 truncate">{k.hint}</div>
+                )}
+              </div>
+            ))}
+          </div>
 
-                {/* 2. Descrição */}
-                <th className="py-3 px-3.5">
-                  <button
-                    onClick={() => handleSort("descricao")}
-                    className="flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Descrição</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 3. Soma de plt */}
-                <th className="py-3 px-3.5 text-right">
-                  <button
-                    onClick={() => handleSort("somaPlt")}
-                    className="inline-flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Soma de plt</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 4. Categoria Ruas */}
-                <th className="py-3 px-3.5">
-                  <button
-                    onClick={() => handleSort("categoriaRuas")}
-                    className="flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Categoria Ruas</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 5. Categoria Item */}
-                <th className="py-3 px-3.5">
-                  <button
-                    onClick={() => handleSort("categoriaItem")}
-                    className="flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Categoria Item</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 6. Altura */}
-                <th className="py-3 px-3.5 text-center">
-                  <button
-                    onClick={() => handleSort("altura")}
-                    className="inline-flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Altura</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 7. Rua */}
-                <th className="py-3 px-3.5 text-center">
-                  <button
-                    onClick={() => handleSort("rua")}
-                    className="inline-flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Rua</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-
-                {/* 8. Alertas */}
-                <th className="py-3 px-3.5 text-center">
-                  <button
-                    onClick={() => handleSort("isRuaErrada")}
-                    className="inline-flex items-center gap-1 font-black text-slate-950 dark:text-white cursor-pointer hover:underline"
-                  >
-                    <span>Alertas</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80 text-xs">
-              {paginatedData.length > 0 ? (
-                paginatedData.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`transition-colors ${
-                      row.isRuaErrada
-                        ? isDark
-                          ? "bg-rose-950/15 hover:bg-rose-950/25"
-                          : "bg-rose-50/70 hover:bg-rose-100/80"
-                        : "hover:bg-slate-100/80 dark:hover:bg-slate-900/50"
-                    }`}
-                  >
-                    {/* PLU */}
-                    <td className="py-2.5 px-3.5 font-mono font-black text-sm text-blue-800 dark:text-blue-400">
-                      {row.plu}
-                    </td>
-
-                    {/* Descrição */}
-                    <td className="py-2.5 px-3.5 font-black text-slate-950 dark:text-slate-100 max-w-xs truncate">
-                      {row.descricao}
-                    </td>
-
-                    {/* Soma de plt */}
-                    <td className="py-2.5 px-3.5 font-mono font-black text-sm text-right text-slate-950 dark:text-white">
-                      {row.somaPlt.toLocaleString("pt-BR")}
-                    </td>
-
-                    {/* Categoria Ruas */}
-                    <td className="py-2.5 px-3.5 font-bold text-slate-900 dark:text-slate-200">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-950 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
-                        {row.categoriaRuas}
-                      </span>
-                    </td>
-
-                    {/* Categoria Item */}
-                    <td className="py-2.5 px-3.5 font-bold text-slate-900 dark:text-slate-200">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-950 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
-                        {row.categoriaItem}
-                      </span>
-                    </td>
-
-                    {/* Altura */}
-                    <td className="py-2.5 px-3.5 font-mono text-center text-slate-950 dark:text-slate-300 font-black">
-                      {row.altura}
-                    </td>
-
-                    {/* Rua */}
-                    <td className="py-2.5 px-3.5 font-mono text-center font-black text-xs text-slate-950 dark:text-white">
-                      <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-black text-slate-950 dark:text-white border border-slate-300 dark:border-transparent">
-                        {row.rua}
-                      </span>
-                    </td>
-
-                    {/* Alertas */}
-                    <td className="py-2.5 px-3.5 text-center">
-                      {row.isRuaErrada ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black font-mono uppercase bg-rose-100 text-rose-900 border border-rose-300 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30">
-                          {row.alertas}
+          {/* TABELA */}
+          <div className="max-h-[620px] overflow-auto">
+            <table className="w-full min-w-[1080px] text-left border-separate border-spacing-y-1">
+              <thead className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md">
+                <tr>
+                  <SortTh field="plu" label="PLU" first />
+                  <SortTh field="descricao" label="Descrição" />
+                  <SortTh field="somaPlt" label="Paletes" align="right" />
+                  <SortTh field="categoriaRuas" label="Categoria rua" />
+                  <SortTh field="categoriaItem" label="Categoria item" />
+                  <SortTh field="altura" label="Altura" align="center" />
+                  <SortTh field="rua" label="Rua" align="center" />
+                  <SortTh field="isRuaErrada" label="Alerta" align="center" last />
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedData.length > 0 ? (
+                  paginatedData.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`transition-colors ${
+                        row.isRuaErrada
+                          ? "bg-rose-500/[0.05] hover:bg-rose-500/[0.09]"
+                          : "bg-slate-500/[0.03] dark:bg-slate-500/[0.06] hover:bg-slate-500/[0.07] dark:hover:bg-slate-500/[0.11]"
+                      }`}
+                    >
+                      <td className={`${ui.td} font-mono text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100 rounded-l-xl`}>{row.plu}</td>
+                      <td className={`${ui.td} font-medium max-w-xs truncate`} title={row.descricao}>{row.descricao}</td>
+                      <td className={`${ui.td} text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100`}>
+                        {row.somaPlt.toLocaleString("pt-BR")}
+                      </td>
+                      <td className={ui.td}><span className={ui.chip}>{row.categoriaRuas}</span></td>
+                      <td className={ui.td}><span className={ui.chip}>{row.categoriaItem}</span></td>
+                      <td className={`${ui.td} text-center font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400`}>{row.altura}</td>
+                      <td className={`${ui.td} text-center`}>
+                        <span className="px-2 py-0.5 rounded-md font-mono text-xs bg-slate-500/10 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 font-medium">
+                          {row.rua}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black font-mono uppercase bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-800 dark:text-emerald-400" />
-                          {row.alertas}
-                        </span>
-                      )}
+                      </td>
+                      <td className={`${ui.td} text-center rounded-r-xl`}>
+                        {row.isRuaErrada ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
+                            <AlertTriangle className="h-3 w-3" />
+                            Rua errada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                            <CheckCircle2 className="h-3 w-3" />
+                            OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="py-20 text-center text-sm text-slate-500 dark:text-slate-400">
+                      {isLoading ? "Carregando alertas..." : "Nenhum registro encontrado para os filtros selecionados."}
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-700 dark:text-slate-400 font-bold">
-                    Nenhum item encontrado com os filtros selecionados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Rodapé da Tabela: Paginação */}
-        <div
-          className={`p-3 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
-            isDark ? "border-slate-800 bg-slate-950/60" : "border-slate-300 bg-slate-50"
-          }`}
-        >
-          <div className="flex items-center gap-2 text-slate-800 dark:text-slate-400 font-semibold">
-            <span>
-              Exibindo{" "}
-              <strong className="text-slate-950 dark:text-slate-200 font-black">
-                {sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}
-              </strong>{" "}
-              a{" "}
-              <strong className="text-slate-950 dark:text-slate-200 font-black">
-                {Math.min(currentPage * pageSize, sortedData.length)}
-              </strong>{" "}
-              de <strong className="text-slate-950 dark:text-slate-200 font-black">{sortedData.length}</strong> itens
-            </span>
-
-            <span className="text-slate-400">·</span>
-
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className={`px-2 py-0.5 rounded border text-xs cursor-pointer font-black ${
-                isDark ? "bg-slate-900 border-slate-700 text-slate-200" : "bg-white border-slate-300 text-slate-950"
-              }`}
-            >
-              <option value={25}>25 por página</option>
-              <option value={50}>50 por página</option>
-              <option value={100}>100 por página</option>
-              <option value={250}>250 por página</option>
-            </select>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className="flex items-center gap-1.5 self-center sm:self-auto">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className={`p-1.5 rounded-lg border text-xs font-black flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer ${
-                isDark
-                  ? "bg-slate-900 border-slate-700 hover:bg-slate-800 text-slate-300"
-                  : "bg-white border-slate-300 hover:bg-slate-100 text-slate-950 shadow-xs"
-              }`}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Anterior</span>
-            </button>
-
-            <span className="px-2 font-mono font-black text-slate-950 dark:text-slate-300">
-              {currentPage} / {totalPages}
-            </span>
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className={`p-1.5 rounded-lg border text-xs font-black flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer ${
-                isDark
-                  ? "bg-slate-900 border-slate-700 hover:bg-slate-800 text-slate-300"
-                  : "bg-white border-slate-300 hover:bg-slate-100 text-slate-950 shadow-xs"
-              }`}
-            >
-              <span>Próxima</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================
-          RODAPÉ INFORMATIVO
-          ============================================================ */}
-      <div className="mt-4 pt-3 border-t border-slate-300 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-700 dark:text-slate-400 font-semibold gap-2">
-        <div className="flex items-center gap-2">
-          GPA PPCP · Gestão de Alertas de Ruas 2026
-
-        </div>
-        <div className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-400">
-          
-        </div>
+          {/* RODAPÉ / PAGINAÇÃO */}
+          <footer className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-3">
+              <span>
+                Exibindo{" "}
+                <strong className="font-semibold text-slate-700 dark:text-slate-200">
+                  {sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, sortedData.length)}
+                </strong>{" "}
+                de <strong className="font-semibold text-slate-700 dark:text-slate-200">{sortedData.length}</strong> itens
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="rounded-lg bg-slate-500/10 hover:bg-slate-500/15 px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 border-0 cursor-pointer focus:outline-none"
+              >
+                {[25, 50, 100, 250].map((n) => (
+                  <option key={n} value={n} className={optionClass}>{n} por página</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-slate-500/10 hover:bg-slate-500/15 px-2.5 font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Anterior
+              </button>
+              <span className="px-2 font-mono text-slate-700 dark:text-slate-300">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-slate-500/10 hover:bg-slate-500/15 px-2.5 font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                Próxima
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </footer>
+        </section>
       </div>
     </div>
   );
