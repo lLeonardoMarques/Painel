@@ -13,6 +13,7 @@ import ManhattanCapacidades from "./components/ManhattanCapacidades";
 import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
 import PainelPFA from "./components/pfa/PainelPFA";
 import LancarRealizado from "./components/LancarRealizado";
+import Parametros from "./components/Parametros";
 import Inicio, { registrarAcesso } from "./components/Inicio";
 
 // ============================================
@@ -206,7 +207,7 @@ export default function App() {
     }
 
     // 🔥 Não-admin não pode acessar Controle de Usuários nem o lançamento do realizado
-    if (user.role !== "admin" && (currentPage === "user-control" || currentPage === "lancar-realizado")) {
+    if (user.role !== "admin" && (currentPage === "user-control" || currentPage === "lancar-realizado" || currentPage === "parametros")) {
       setCurrentPage(DEFAULT_PAGE);
       return;
     }
@@ -499,6 +500,10 @@ export default function App() {
 
         {currentPage === "lancar-realizado" && user?.role === "admin" && (
           <LancarRealizado theme={theme} showNotification={showNotification} />
+        )}
+
+        {currentPage === "parametros" && user?.role === "admin" && (
+          <Parametros theme={theme} showNotification={showNotification} />
         )}
 
         {currentPage === "user-control" && user?.role === "admin" && (

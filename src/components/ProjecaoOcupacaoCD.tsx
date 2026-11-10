@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Lock, RotateCcw, Save, Trash2, Plus, X } from "lucide-react";
+import { CheckCircle2, Lock, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiFetch } from "../services/api";
 
 // ---------------------------------------------------------------------------
@@ -105,46 +105,24 @@ interface Categoria {
   fluxos: { codigo: string; nome: string }[];
 }
 
-interface ParametroFluxo {
-  fluxo: string;
-  nome: string;
-  percentualRecebimento: number;
-  palletsPorVeiculo: number;
-  percentualExpedicao: number;
-  caixasPalletFracionado: number;
-  caixasPalletFechado: number;
-}
-
 interface SimulacaoResumo {
   id: number;
   nome: string;
 }
 
-interface Variacao {
-  campo: string;
-  inicio: string;
-  fim: string;
-  percentual: number;
-}
-
-interface Extra {
-  categoria: string;
-  aPartirDe: string;
-  posicoes: number;
+/** Veículos e caixas digitados na simulação para um fluxo num dia (nulo = mantém a base oficial). */
+interface AjusteFluxoDia {
+  fluxo: string;
+  data: string;
+  [campo: string]: number | string | null;
 }
 
 interface SimulacaoDetalhe {
   id: number;
   nome: string;
   descricao: string | null;
-  definicao: {
-    parametrosGerais?: unknown;
-    parametrosFluxo?: Record<string, Record<string, number | null>>;
-    ajustesFluxo?: unknown[];
-    ajustesCapacidade?: unknown[];
-    variacoes?: Variacao[];
-    capacidadeExtra?: Extra[];
-  };
+  definicao: { ajustesFluxo?: AjusteFluxoDia[] };
+  aplicadaEm: string | null;
 }
 
 type Pendente = Record<string, number | null | string>;
@@ -158,8 +136,6 @@ const CAMPO_FLUXO: Record<string, string> = {
   frac: "demandaFracionada",
   fech: "demandaFechada",
 };
-const PAR_CAMPOS = ["percentualRecebimento", "palletsPorVeiculo", "percentualExpedicao", "caixasPalletFracionado", "caixasPalletFechado"] as const;
-const PCT_CAMPOS = new Set<string>(["percentualRecebimento", "percentualExpedicao"]);
 
 const COLS: { k: string; t: string; ed?: boolean }[] = [
   { k: "veic", t: "Veículos (agenda / real)", ed: true },
@@ -227,7 +203,6 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const [fluxo, setFluxo] = useState("TOTAL");
 
   const [cats, setCats] = useState<Categoria[]>([]);
-  const [params, setParams] = useState<ParametroFluxo[]>([]);
   const [sims, setSims] = useState<SimulacaoResumo[]>([]);
   const [proj, setProj] = useState<Projecao | null>(null);
   const [comp, setComp] = useState<Comparativo | null>(null);
@@ -240,7 +215,6 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const [salvando, setSalvando] = useState(false);
 
   const hoje = proj?.hoje || hojeLocal;
-  const amanha = iso(addD(parse(hoje), 1));
   const catInfo = cats.find((c) => c.codigo === cat);
   const fluxosCat = cat === "TODAS" || !catInfo ? [] : catInfo.fluxos.map((f) => f.codigo);
   const fluxoEdicao = fluxosCat.length === 1 ? fluxosCat[0] : fluxo !== "TOTAL" ? fluxo : null;
@@ -261,13 +235,11 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   useEffect(() => {
     (async () => {
       try {
-        const [c, p, s] = await Promise.all([
+        const [c, s] = await Promise.all([
           chamar<Categoria[]>("/categorias"),
-          chamar<{ fluxos: ParametroFluxo[] }>("/parametros"),
           chamar<SimulacaoResumo[]>("/simulacoes"),
         ]);
         setCats(c);
-        setParams(p.fluxos);
         setSims(s);
       } catch (e: any) {
         setErro(e.message);
@@ -344,7 +316,11 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   };
 
   const editavel = (d: Dia, ed?: boolean) =>
-    !!ed && !sim && cat !== "TODAS" && d.tipo !== "REALIZADO" && d.data > hoje && !!fluxoEdicao;
+    !!ed && cat !== "TODAS" && d.tipo !== "REALIZADO" && d.data > hoje && !!fluxoEdicao;
+
+  /** Na simulação, o que já foi digitado nela (por fluxo e dia). */
+  const ajusteSim = (data: string) =>
+    simDef?.definicao.ajustesFluxo?.find((a) => a.fluxo === fluxoEdicao && a.data === data);
 
   const editarFluxo = (d: Dia, campo: string, valor: number | null) => {
     if (!fluxoEdicao) return;
@@ -352,9 +328,15 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
     setPendFluxo((p) => {
       let atual = p[chave];
       if (!atual) {
-        const f = d.fluxos.find((x) => x.fluxo === fluxoEdicao);
         atual = { fluxo: fluxoEdicao, data: d.data };
-        for (const k of Object.values(CAMPO_FLUXO)) atual[k] = f && (f.ajustados || []).includes(k) ? (f as any)[k] : null;
+        if (sim) {
+          // a simulação guarda o dia inteiro: parte do que já foi digitado nela
+          const a = ajusteSim(d.data);
+          for (const k of Object.values(CAMPO_FLUXO)) atual[k] = (a?.[k] as number | null | undefined) ?? null;
+        } else {
+          const f = d.fluxos.find((x) => x.fluxo === fluxoEdicao);
+          for (const k of Object.values(CAMPO_FLUXO)) atual[k] = f && (f.ajustados || []).includes(k) ? (f as any)[k] : null;
+        }
       }
       return { ...p, [chave]: { ...atual, [campo]: valor } };
     });
@@ -363,9 +345,14 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const salvarPlanejado = async () => {
     setSalvando(true);
     try {
-      await chamar("/lancamentos/fluxos", { method: "PUT", body: JSON.stringify(Object.values(pendFluxo)) });
+      if (sim) {
+        await chamar(`/simulacoes/${sim}/ajustes-fluxo`, { method: "PATCH", body: JSON.stringify(Object.values(pendFluxo)) });
+        notificar("✅ Simulação salva");
+      } else {
+        await chamar("/lancamentos/fluxos", { method: "PUT", body: JSON.stringify(Object.values(pendFluxo)) });
+        notificar("✅ Planejado salvo");
+      }
       setPendFluxo({});
-      notificar("✅ Planejado salvo");
       setRecarregar((n) => n + 1);
     } catch (e: any) {
       setErro(e.message);
@@ -379,9 +366,12 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
     if (!fluxoEdicao || !proj) return;
     const dias = proj.dias.filter((d) => d.tipo !== "REALIZADO" && d.data > hoje);
     if (!dias.length) return;
-    if (!window.confirm(`Remover os ajustes planejados de ${fluxoEdicao} entre ${dm(dias[0].data)} e ${dm(dias[dias.length - 1].data)}?`)) return;
+    const onde = sim ? "da simulação" : "planejados";
+    if (!window.confirm(`Remover os ajustes ${onde} de ${fluxoEdicao} entre ${dm(dias[0].data)} e ${dm(dias[dias.length - 1].data)}?`)) return;
+    const itens = JSON.stringify(dias.map((d) => ({ fluxo: fluxoEdicao, data: d.data })));
     try {
-      await chamar("/lancamentos/fluxos", { method: "PUT", body: JSON.stringify(dias.map((d) => ({ fluxo: fluxoEdicao, data: d.data }))) });
+      if (sim) await chamar(`/simulacoes/${sim}/ajustes-fluxo`, { method: "PATCH", body: itens });
+      else await chamar("/lancamentos/fluxos", { method: "PUT", body: itens });
       setPendFluxo({});
       setRecarregar((n) => n + 1);
     } catch (e: any) {
@@ -428,10 +418,10 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const ultimo = proj?.dias[proj.dias.length - 1];
   const dicas: string[] = [];
   if (cat === "TODAS") dicas.push('Com "Todas as categorias" a tabela mostra a soma e não é editável.');
-  else if (sim) dicas.push("Simulação: a tabela mostra a projeção simulada, sem edição. Ajuste a simulação no painel abaixo.");
   else {
     if (fluxosCat.length > 1 && fluxo === "TOTAL") dicas.push("Para editar, escolha o fluxo (Limpeza ou Perfumaria).");
-    dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em Administração > Lançar realizado.');
+    if (sim) dicas.push("Simulação: digite veículos e caixas de amanhã em diante e salve. Os parâmetros não mudam na simulação. A base oficial só muda ao aplicar a simulação (painel abaixo).");
+    else dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em Administração > Lançar realizado.');
   }
   dicas.push(...(proj?.avisos || []));
 
@@ -575,7 +565,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
                 {COLS.map((c) => (
                   <th key={c.k}
                     className={`${th} text-right last:rounded-r-xl ${
-                      c.ed && cat !== "TODAS" && !sim ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"
+                      c.ed && cat !== "TODAS" ?"text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"
                     }`}>
                     {c.t}
                   </th>
@@ -607,7 +597,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
                         const pend = pendFluxo[`${fluxoEdicao}|${d.data}`];
                         const temPend = !!pend && campoApi in pend;
                         const val = temPend ? pend[campoApi] : v[c.k];
-                        const ajustado = (v.aj as string[]).includes(campoApi);
+                        const ajustado = sim ? ajusteSim(d.data)?.[campoApi] != null : (v.aj as string[]).includes(campoApi);
                         return (
                           <td key={c.k} className="px-1.5 py-1">
                             <CelulaNumero aria-label={`${c.t} ${d.data}`}
@@ -642,20 +632,21 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
           </table>
         </div>
 
-        {!sim && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
-            <span>Veículos = agenda útil × % recebimento (+ remunerado + backlog) · ocupação = dia anterior (real, se houver) + recebidos − expedidos. Campo vazio volta ao calculado.</span>
-            <div className="flex items-center gap-2">
-              {Object.keys(pendFluxo).length > 0 && <span className="font-semibold text-amber-600">Alterações não salvas</span>}
-              <button type="button" className={btn} onClick={desfazer} disabled={cat === "TODAS" || !fluxoEdicao}>
-                <RotateCcw className="h-3.5 w-3.5" /> Desfazer ajustes desta visão
-              </button>
-              <button type="button" className={btnPrimario} onClick={salvarPlanejado} disabled={!Object.keys(pendFluxo).length || salvando}>
-                <Save className="h-3.5 w-3.5" /> Salvar
-              </button>
-            </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+          <span>
+            Veículos = agenda útil × % recebimento (+ remunerado + backlog) · ocupação = dia anterior (real, se houver) + recebidos − expedidos.{" "}
+            {sim ? "Campo vazio volta ao valor da base oficial." : "Campo vazio volta ao calculado."}
+          </span>
+          <div className="flex items-center gap-2">
+            {Object.keys(pendFluxo).length > 0 && <span className="font-semibold text-amber-600">Alterações não salvas</span>}
+            <button type="button" className={btn} onClick={desfazer} disabled={cat === "TODAS" || !fluxoEdicao}>
+              <RotateCcw className="h-3.5 w-3.5" /> {sim ? "Limpar simulação desta visão" : "Desfazer ajustes desta visão"}
+            </button>
+            <button type="button" className={btnPrimario} onClick={salvarPlanejado} disabled={!Object.keys(pendFluxo).length || salvando}>
+              <Save className="h-3.5 w-3.5" /> {sim ? "Salvar simulação" : "Salvar"}
+            </button>
           </div>
-        )}
+        </div>
       </section>
 
       {/* SIMULAÇÃO */}
@@ -669,15 +660,15 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
           btnPrimario={btnPrimario}
           simDef={simDef}
           comp={comp}
-          params={cat === "TODAS" ? params : params.filter((p) => fluxosCat.includes(p.fluxo))}
-          cats={cats}
-          categoriaAtual={cat}
-          amanha={amanha}
-          periodo={periodo}
+          temPendente={temPendente}
           onSalvo={async () => {
             setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
             setRecarregar((n) => n + 1);
             notificar("✅ Simulação salva");
+          }}
+          onAplicado={(dias, ignorados) => {
+            setRecarregar((n) => n + 1);
+            notificar(`✅ Simulação aplicada na base oficial: ${dias} dia(s)${ignorados ? ` · ${ignorados} dia(s) que já passaram ficaram de fora` : ""}`);
           }}
           onExcluido={async () => {
             setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
@@ -890,60 +881,57 @@ interface PainelSimulacaoProps {
   btnPrimario: string;
   simDef: SimulacaoDetalhe;
   comp: Comparativo;
-  params: ParametroFluxo[];
-  cats: Categoria[];
-  categoriaAtual: string;
-  amanha: string;
-  periodo: [string, string];
+  temPendente: boolean;
   onSalvo: () => void;
+  onAplicado: (dias: number, ignorados: number) => void;
   onExcluido: () => void;
   onErro: (msg: string) => void;
 }
 
-/** Ajustes da simulação: parâmetros por fluxo, variação % de agenda/caixas e posições extras (de amanhã em diante). */
+/**
+ * Simulação: só veículos e caixas (digitados na tabela acima). Aqui ficam nome, comparação com a base
+ * e a ação de aplicar — quando a simulação "vale", os valores dela substituem o planejado oficial.
+ */
 function PainelSimulacao(p: PainelSimulacaoProps) {
-  const def = p.simDef.definicao;
   const [nome, setNome] = useState(p.simDef.nome);
   const [descricao, setDescricao] = useState(p.simDef.descricao || "");
-  const [pars, setPars] = useState<Record<string, Record<string, string>>>(() => {
-    const o: Record<string, Record<string, string>> = {};
-    for (const [f, aj] of Object.entries(def.parametrosFluxo || {})) {
-      o[f] = {};
-      for (const c of PAR_CAMPOS) {
-        const v = aj?.[c];
-        o[f][c] = v == null ? "" : String(PCT_CAMPOS.has(c) ? Math.round(v * 10000) / 100 : v);
-      }
-    }
-    return o;
-  });
-  const inicioPadrao = p.periodo[0] > p.amanha ? p.periodo[0] : p.amanha;
-  const [variacoes, setVariacoes] = useState<Variacao[]>(def.variacoes || []);
-  const [extras, setExtras] = useState<Extra[]>(def.capacidadeExtra || []);
-  const [salvando, setSalvando] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const ajustes = p.simDef.definicao.ajustesFluxo || [];
+  const dias = new Set(ajustes.map((a) => a.data)).size;
+  const mudouNome = nome.trim() !== p.simDef.nome || descricao !== (p.simDef.descricao || "");
 
-  const salvar = async () => {
-    setSalvando(true);
+  const salvarNome = async () => {
+    setOcupado(true);
     try {
-      const parametrosFluxo: Record<string, Record<string, number | null>> = { ...(def.parametrosFluxo || {}) };
-      for (const [f, campos] of Object.entries(pars)) {
-        const aj: Record<string, number | null> = {};
-        for (const c of PAR_CAMPOS) {
-          const s = (campos[c] ?? "").trim();
-          aj[c] = s === "" ? null : PCT_CAMPOS.has(c) ? Number(s.replace(",", ".")) / 100 : Number(s.replace(",", "."));
-        }
-        if (Object.values(aj).some((v) => v != null)) parametrosFluxo[f] = aj;
-        else delete parametrosFluxo[f];
-      }
-      const definicao = { ...def, parametrosFluxo, variacoes, capacidadeExtra: extras };
+      // sem definicao: o backend mantém os veículos e caixas já salvos
       await chamar(`/simulacoes/${p.simDef.id}`, {
         method: "PUT",
-        body: JSON.stringify({ nome: nome.trim() || p.simDef.nome, descricao, definicao }),
+        body: JSON.stringify({ nome: nome.trim() || p.simDef.nome, descricao }),
       });
       p.onSalvo();
     } catch (e: any) {
       p.onErro(e.message);
     } finally {
-      setSalvando(false);
+      setOcupado(false);
+    }
+  };
+
+  const aplicar = async () => {
+    if (p.temPendente) {
+      p.onErro("Salve a simulação antes de aplicar.");
+      return;
+    }
+    if (!window.confirm(
+      `Aplicar "${p.simDef.nome}" na base oficial?\n\nOs veículos e caixas da simulação substituem o planejado oficial nos mesmos dias (de amanhã em diante). Dias que já passaram ficam de fora.`,
+    )) return;
+    setOcupado(true);
+    try {
+      const r = await chamar<{ diasAplicados: number; diasIgnoradosPassado: number }>(`/simulacoes/${p.simDef.id}/aplicar`, { method: "POST" });
+      p.onAplicado(r.diasAplicados, r.diasIgnoradosPassado);
+    } catch (e: any) {
+      p.onErro(e.message);
+    } finally {
+      setOcupado(false);
     }
   };
 
@@ -961,10 +949,10 @@ function PainelSimulacao(p: PainelSimulacaoProps) {
   const cartao = (titulo: string, base: number | null | undefined, simulado: number | null | undefined, fmt: (v: number | null | undefined) => string, pct: boolean) => {
     const delta = base != null && simulado != null ? simulado - base : null;
     return (
-      <div className={`rounded-lg border px-3 py-2 ${p.isDark ? "border-slate-800 bg-slate-950/40" : "border-slate-200 bg-white"}`}>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{titulo}</span>
+      <div className="rounded-xl bg-slate-500/5 dark:bg-slate-500/10 px-4 py-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{titulo}</span>
         <div className="text-xl font-semibold tabular-nums">{fmt(simulado)}</div>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[11px] text-slate-500 dark:text-slate-400">
           base {fmt(base)}
           {delta ? (
             <span className={delta > 0 ? "text-red-500" : "text-green-600"}>
@@ -975,108 +963,51 @@ function PainelSimulacao(p: PainelSimulacaoProps) {
       </div>
     );
   };
-  const celInput = `w-full min-w-[70px] rounded-md border px-2 py-1 text-xs outline-hidden ${
-    p.isDark ? "bg-slate-950 border-slate-700 text-slate-100" : "bg-white border-slate-200"
-  }`;
+  const rot = "mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300";
+  const aplicada = p.simDef.aplicadaEm ? new Date(p.simDef.aplicadaEm) : null;
 
   return (
-    <section className={`${p.painel} p-4 sm:p-5 border-violet-500/60`}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Simulação</h2>
-        <div className="flex gap-2">
-          <button type="button" className={`${p.btn} text-red-500`} onClick={excluir}><Trash2 className="h-3.5 w-3.5" /> Excluir</button>
-          <button type="button" className={p.btnPrimario} onClick={salvar} disabled={salvando}><Save className="h-3.5 w-3.5" /> Salvar simulação</button>
+    <section className={`${p.painel} p-5 sm:p-6`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Simulação</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {ajustes.length ? `${ajustes.length} ajuste(s) de veículos/caixas em ${dias} dia(s)` : "Nenhum ajuste ainda: digite veículos e caixas na tabela acima e salve."}
+            {aplicada && ` · aplicada na base oficial em ${aplicada.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={`${p.btn} text-red-600 dark:text-red-400`} onClick={excluir} disabled={ocupado}>
+            <Trash2 className="h-3.5 w-3.5" /> Excluir
+          </button>
+          <button type="button" className={p.btn} onClick={salvarNome} disabled={ocupado || !mudouNome}>
+            <Save className="h-3.5 w-3.5" /> Salvar nome
+          </button>
+          <button type="button" className={p.btnPrimario} onClick={aplicar} disabled={ocupado || !ajustes.length}>
+            <CheckCircle2 className="h-3.5 w-3.5" /> Aplicar na base oficial
+          </button>
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Nome</span>
-          <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={p.campo} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Descrição</span>
-          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={1000} className={p.campo} />
-        </label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label htmlFor="sim-nome" className={rot}>Nome</label>
+          <input id="sim-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={p.campo} />
+        </div>
+        <div>
+          <label htmlFor="sim-desc" className={rot}>Descrição</label>
+          <input id="sim-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={1000} className={p.campo} />
+        </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cartao("% fim do período", r.percentualFinalBase, r.percentualFinalSimulado, pf, true)}
         {cartao("Ocupação fim do período", r.ocupacaoFinalBase, r.ocupacaoFinalSimulada, nf, false)}
         {cartao("Pico projetado", r.picoBase?.percentual, r.picoSimulado?.percentual, pf, true)}
         {cartao("Dias críticos (≥95%)", r.diasCriticosBase, r.diasCriticosSimulado, (v) => (v == null ? "—" : String(v)), false)}
       </div>
-      <p className="mt-2 text-xs text-slate-500">A simulação vale de amanhã em diante e não muda a base oficial nem o que já aconteceu.</p>
-
-      <h3 className="mt-5 mb-2 text-sm font-semibold">Parâmetros por fluxo <span className="font-normal text-slate-500">(vazio = valor oficial)</span></h3>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-xs">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-slate-500">
-              {["Fluxo", "% recebimento", "Pallets / veículo", "% expedição", "Cx/pallet fracionado", "Cx/pallet fechado"].map((t) => (
-                <th key={t} className="px-2 py-1.5 text-left font-semibold">{t}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {p.params.map((pf_) => (
-              <tr key={pf_.fluxo}>
-                <td className="px-2 py-1">{pf_.nome}</td>
-                {PAR_CAMPOS.map((c) => (
-                  <td key={c} className="px-2 py-1">
-                    <input type="number" step="any" className={celInput}
-                      placeholder={PCT_CAMPOS.has(c) ? (pf_[c] * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : String(pf_[c])}
-                      value={pars[pf_.fluxo]?.[c] ?? ""}
-                      onChange={(e) => setPars((o) => ({ ...o, [pf_.fluxo]: { ...(o[pf_.fluxo] || {}), [c]: e.target.value } }))} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <h3 className="mt-5 mb-2 text-sm font-semibold">Variação percentual de agenda / caixas</h3>
-      <div className="space-y-2">
-        {variacoes.map((v, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
-            <select value={v.campo} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, campo: e.target.value } : x)))}>
-              <option value="CAIXAS">Caixas (frac. + fech.)</option>
-              <option value="CAIXAS_FRACIONADAS">Caixas fracionadas</option>
-              <option value="CAIXAS_FECHADAS">Caixas fechadas</option>
-              <option value="AGENDA">Agenda (veículos)</option>
-            </select>
-            <input type="date" min={p.amanha} value={v.inicio} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, inicio: e.target.value } : x)))} />
-            <span>a</span>
-            <input type="date" min={p.amanha} value={v.fim} className={`${celInput} w-auto`} onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, fim: e.target.value } : x)))} />
-            <input type="number" step="any" value={Math.round(v.percentual * 10000) / 100} className={`${celInput} w-24`}
-              onChange={(e) => setVariacoes((l) => l.map((x, j) => (j === i ? { ...x, percentual: Number(e.target.value) / 100 } : x)))} />
-            <span>%</span>
-            <button type="button" className={p.btn} onClick={() => setVariacoes((l) => l.filter((_, j) => j !== i))} aria-label="Remover variação"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        ))}
-        <button type="button" className={p.btn} onClick={() => setVariacoes((l) => [...l, { campo: "CAIXAS", inicio: inicioPadrao, fim: p.periodo[1] > inicioPadrao ? p.periodo[1] : inicioPadrao, percentual: 0.1 }])}>
-          <Plus className="h-3.5 w-3.5" /> Variação
-        </button>
-      </div>
-
-      <h3 className="mt-5 mb-2 text-sm font-semibold">Posições extras de capacidade</h3>
-      <div className="space-y-2">
-        {extras.map((x, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
-            <select value={x.categoria} className={`${celInput} w-auto`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, categoria: e.target.value } : y)))}>
-              {p.cats.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}
-            </select>
-            <span>a partir de</span>
-            <input type="date" min={p.amanha} value={x.aPartirDe} className={`${celInput} w-auto`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, aPartirDe: e.target.value } : y)))} />
-            <input type="number" step="any" value={x.posicoes} className={`${celInput} w-28`} onChange={(e) => setExtras((l) => l.map((y, j) => (j === i ? { ...y, posicoes: Number(e.target.value) } : y)))} />
-            <span>posições</span>
-            <button type="button" className={p.btn} onClick={() => setExtras((l) => l.filter((_, j) => j !== i))} aria-label="Remover posições"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        ))}
-        <button type="button" className={p.btn}
-          onClick={() => setExtras((l) => [...l, { categoria: p.categoriaAtual === "TODAS" ? p.cats[0]?.codigo || "COMPLEMENTAR" : p.categoriaAtual, aPartirDe: inicioPadrao, posicoes: 0 }])}>
-          <Plus className="h-3.5 w-3.5" /> Posições
-        </button>
-      </div>
+      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+        A simulação usa os parâmetros oficiais e muda só veículos e caixas, de amanhã em diante. A base oficial só muda ao clicar em
+        “Aplicar na base oficial”: aí os valores da simulação substituem o planejado nos mesmos dias.
+      </p>
     </section>
   );
 }
