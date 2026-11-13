@@ -1,11 +1,21 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+import { rotaPlanilhaManhattan } from './manhattanPlanilha';
+
+// Manhattan Capacidades: lê a planilha da pasta Agendamento neste computador e entrega em /api/manhattan/planilha
+// (fica antes do proxy de /api, então não vai para a API externa)
+const planilhaManhattan = (): Plugin => ({
+  name: 'planilha-manhattan',
+  configureServer(server) {
+    server.middlewares.use('/api/manhattan/planilha', rotaPlanilhaManhattan);
+  },
+});
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), planilhaManhattan()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -105,4 +115,4 @@ export default defineConfig(() => {
       },
     },
   };
-});
+});

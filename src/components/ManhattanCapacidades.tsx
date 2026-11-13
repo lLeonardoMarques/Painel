@@ -138,6 +138,27 @@ const CDS_REGIONAL = [409, 1974, 1979, 1984, 1953];
 const ALL_CDS = [...CDS_SP, ...CDS_REGIONAL];
 
 export type ModoVisualizacao = "igualitaria" | "ponderada";
+/** De onde vem a grade: planilha de agendamento (padrão) ou cálculo a partir da API de capacidades. */
+export type FonteGrade = "planilha" | "api";
+
+interface LinhaPlanilha {
+  cd: string;
+  categoria: string;
+  hora: number;
+  periodo: string;
+  dias: number[]; // Domingo..Sábado
+}
+interface PlanilhaManhattan {
+  arquivo: string;
+  pasta: string;
+  atualizadoEm: string;
+  linhas: LinhaPlanilha[];
+  falhas: { cd: string; categoria: string; erro: string }[];
+}
+
+/** Compara categorias da planilha e do sistema ignorando acento e plural ("Perecivel" = "Perecíveis"). */
+const chaveCategoria = (c: string) =>
+  c.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "").slice(0, 7);
 
 /**
  * Diluição Igualitária Perfeita entre as 24 Horas
@@ -271,6 +292,47 @@ export default function ManhattanCapacidades({
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
   const [isRecalculating, setIsRecalculating] = useState<boolean>(false);
 
+  // ---------------------------------------------------------- planilha de agendamento
+  const [fonte, setFonte] = useState<FonteGrade>(() => {
+    try {
+      return localStorage.getItem("manhattan_fonte") === "api" ? "api" : "planilha";
+    } catch {
+      return "planilha";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("manhattan_fonte", fonte);
+    } catch {
+      /* storage indisponível */
+    }
+  }, [fonte]);
+  const [planilha, setPlanilha] = useState<PlanilhaManhattan | null>(null);
+  const [erroPlanilha, setErroPlanilha] = useState<string | null>(null);
+  const [carregandoPlanilha, setCarregandoPlanilha] = useState(false);
+
+  const fetchPlanilha = useCallback(async () => {
+    setCarregandoPlanilha(true);
+    try {
+      const res = await fetch("/api/manhattan/planilha", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.erro || `HTTP ${res.status}`);
+      setPlanilha(data);
+      setErroPlanilha(null);
+    } catch (err: any) {
+      setErroPlanilha(err?.message || "Não foi possível ler a planilha.");
+    } finally {
+      setCarregandoPlanilha(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchPlanilha();
+    // a planilha é relida a cada 2 minutos: quem estiver com a tela aberta vê a versão nova sem recarregar
+    const id = setInterval(() => void fetchPlanilha(), 120000);
+    return () => clearInterval(id);
+  }, [fetchPlanilha]);
+
   // Busca de capacidades na API
   const fetchCapacidades = useCallback(async () => {
     setIsLoading(true);
@@ -367,8 +429,50 @@ export default function ManhattanCapacidades({
     return totals; // [60, 180, 180, 180, 181, 181, 76]
   }, []);
 
+  // Grade vinda da planilha: soma os CDs/categorias do filtro, faixa por faixa e dia por dia
+  const gradePlanilha = useMemo(() => {
+    const matriz = MANHATTAN_HORARIOS.map(() => Array(7).fill(0) as number[]);
+    let encontrou = false;
+    if (planilha && !isCdCategoriaIncompativel) {
+      const cat = categoriaSelecionada === "all" ? null : chaveCategoria(categoriaSelecionada);
+      planilha.linhas.forEach((l) => {
+        if (cdSelecionado !== "all" && String(l.cd) !== cdSelecionado) return;
+        if (cat && chaveCategoria(l.categoria) !== cat) return;
+        if (l.hora < 0 || l.hora > 23) return;
+        encontrou = true;
+        l.dias.forEach((v, d) => (matriz[l.hora][d] += Number(v) || 0));
+      });
+    }
+    return { matriz, encontrou };
+  }, [planilha, cdSelecionado, categoriaSelecionada, isCdCategoriaIncompativel]);
+
+  // falhas da última extração que afetam o filtro atual
+  const falhasDoFiltro = useMemo(() => {
+    if (!planilha) return [];
+    const cat = categoriaSelecionada === "all" ? null : chaveCategoria(categoriaSelecionada);
+    return planilha.falhas.filter(
+      (f) => (cdSelecionado === "all" || f.cd === cdSelecionado) && (!cat || chaveCategoria(f.categoria) === cat)
+    );
+  }, [planilha, cdSelecionado, categoriaSelecionada]);
+
   // Matriz final calculada e diluída por horário com amarração estrita e conservação de capacidade
   const computedTableData = useMemo(() => {
+    if (fonte === "planilha") {
+      return MANHATTAN_HORARIOS.map((horario, i) => {
+        const v = gradePlanilha.matriz[i];
+        return {
+          horario,
+          domingo: v[0],
+          segunda: v[1],
+          terca: v[2],
+          quarta: v[3],
+          quinta: v[4],
+          sexta: v[5],
+          sabado: v[6],
+          totalHorario: v.reduce((a, b) => a + b, 0),
+        };
+      });
+    }
     // 1. Calcula a coluna horária de 24 valores para cada um dos 7 dias da semana
     const dayColumns: number[][] = [];
 
@@ -418,7 +522,7 @@ export default function ManhattanCapacidades({
         totalHorario,
       };
     });
-  }, [weekDays, visualizacaoModo, dailyInboundFromApi, isCdCategoriaIncompativel, cdSelecionado, categoriaSelecionada]);
+  }, [fonte, gradePlanilha, weekDays, visualizacaoModo, dailyInboundFromApi, isCdCategoriaIncompativel, cdSelecionado, categoriaSelecionada]);
 
   // Totais por Coluna (Total do Dia)
   const columnTotals = useMemo(() => {
@@ -747,8 +851,9 @@ export default function ManhattanCapacidades({
       <footer className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400">
         <span className="flex items-center gap-1.5">
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-          A soma das 24 faixas conserva exatamente o total de inbound da API.
-          {lastSync && ` Última sincronização: ${lastSync}.`}
+          {fonte === "planilha"
+            ? "Valores exatamente como estão na planilha de agendamento, por horário e categoria."
+            : `A soma das 24 faixas conserva exatamente o total de inbound da API.${lastSync ? ` Última sincronização: ${lastSync}.` : ""}`}
         </span>
         <span className="font-medium text-slate-700 dark:text-slate-300">
           Total da semana:
@@ -794,7 +899,7 @@ export default function ManhattanCapacidades({
               <Download className="h-3.5 w-3.5" />
               Exportar Excel
             </button>
-            <button type="button" onClick={fetchCapacidades} disabled={isLoading} className={ui.ghostBtn} title="Recarregar dados da API de Capacidades">
+            <button type="button" onClick={() => { void fetchCapacidades(); void fetchPlanilha(); }} disabled={isLoading} className={ui.ghostBtn} title="Recarregar a planilha e os dados da API de Capacidades">
               <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
               {isLoading ? "Sincronizando..." : "Atualizar dados"}
             </button>
@@ -891,6 +996,18 @@ export default function ManhattanCapacidades({
         {/* CONTAINER PRINCIPAL */}
         <section className={`${ui.card} p-5 sm:p-6 space-y-6`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Fonte da grade">
+              <button type="button" role="tab" aria-selected={fonte === "planilha"} onClick={() => setFonte("planilha")} className={ui.seg(fonte === "planilha")}
+                title="Valores da planilha de agendamento, por horário e categoria">
+                Planilha de agendamento
+              </button>
+              <button type="button" role="tab" aria-selected={fonte === "api"} onClick={() => setFonte("api")} className={ui.seg(fonte === "api")}
+                title="Distribui o total diário da API de capacidades pelas 24 horas">
+                Cálculo pela API
+              </button>
+            </div>
+            {fonte === "api" && (
             <div className="inline-flex p-1 rounded-xl bg-slate-500/10 dark:bg-slate-500/15" role="tablist" aria-label="Modo de diluição">
               <button
                 type="button"
@@ -913,11 +1030,56 @@ export default function ManhattanCapacidades({
                 Curva WMS
               </button>
             </div>
-            <button type="button" onClick={handleRecalcular} disabled={isRecalculating} className={ui.primaryBtn} title="Recalcular a distribuição horária da semana">
-              <Calculator className={`h-3.5 w-3.5 ${isRecalculating ? "animate-spin" : ""}`} />
-              Recalcular grade
-            </button>
+            )}
+            </div>
+            {fonte === "api" ? (
+              <button type="button" onClick={handleRecalcular} disabled={isRecalculating} className={ui.primaryBtn} title="Recalcular a distribuição horária da semana">
+                <Calculator className={`h-3.5 w-3.5 ${isRecalculating ? "animate-spin" : ""}`} />
+                Recalcular grade
+              </button>
+            ) : (
+              <button type="button" onClick={() => void fetchPlanilha()} disabled={carregandoPlanilha} className={ui.ghostBtn} title="Ler de novo a planilha mais recente da pasta Agendamento">
+                <RefreshCw className={`h-3.5 w-3.5 ${carregandoPlanilha ? "animate-spin" : ""}`} />
+                Recarregar planilha
+              </button>
+            )}
           </div>
+
+          {/* Origem da planilha, erros e falhas da extração */}
+          {fonte === "planilha" && (
+            <div className="space-y-2">
+              {erroPlanilha ? (
+                <div className="flex items-start gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-xs text-red-700 dark:text-red-300">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span><strong>Não foi possível ler a planilha.</strong> {erroPlanilha}</span>
+                </div>
+              ) : planilha ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="font-mono text-slate-700 dark:text-slate-300">{planilha.arquivo}</span>
+                  </span>
+                  <span>atualizada em {new Date(planilha.atualizadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span>valores por dia da semana (iguais em todas as semanas)</span>
+                </div>
+              ) : null}
+              {planilha && !gradePlanilha.encontrou && !isCdCategoriaIncompativel && falhasDoFiltro.length === 0 && (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>A planilha não tem dados para {cdSelecionado === "all" ? "este filtro" : `o CD ${cdSelecionado}`}{categoriaSelecionada !== "all" ? ` · ${categoriaSelecionada}` : ""}.</span>
+                </div>
+              )}
+              {falhasDoFiltro.length > 0 && (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>Faltaram na última extração:</strong>{" "}
+                    {falhasDoFiltro.map((f) => `CD ${f.cd} · ${f.categoria}`).join(", ")}. Esses valores aparecem como 0.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Aviso CD x categoria (padrão do banner de Capacidades) */}
           {isCdCategoriaIncompativel && (

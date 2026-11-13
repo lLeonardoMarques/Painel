@@ -81,8 +81,26 @@ export default function Capacidades({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>({ cd: "all", mes: "all", categoria: "all" });
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // filtro enviado pelo Início ("Ver capacidades" de um CD): aplica uma vez ao abrir e já expande o mês atual
+  const [filtroInicial] = useState<{ cd?: string; mes?: string } | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("capacidades_filtro_inicial");
+      sessionStorage.removeItem("capacidades_filtro_inicial");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [filters, setFilters] = useState<Filters>({
+    cd: filtroInicial?.cd ? String(filtroInicial.cd) : "all",
+    mes: filtroInicial?.mes || "all",
+    categoria: "all",
+  });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    if (!filtroInicial?.cd) return {};
+    const d = new Date();
+    return { [`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`]: true };
+  });
   const [editing, setEditing] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(undefined);
   const [saving, setSaving] = useState(false);

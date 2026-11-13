@@ -270,7 +270,8 @@ export default function Layout({
         className={[
           "group relative flex w-full items-center rounded-xl text-left outline-none transition-colors duration-150 cursor-pointer",
           "focus-visible:ring-2 focus-visible:ring-blue-500/60",
-          compact ? "h-11 justify-center" : nested ? "h-9 gap-2.5 pl-3 pr-2.5" : "h-10 gap-3 px-3",
+          // altura mínima (e não fixa): nomes longos quebram em duas linhas em vez de serem cortados
+          compact ? "h-11 justify-center" : nested ? "min-h-9 gap-2.5 py-1.5 pl-3 pr-2.5" : "min-h-10 gap-3 px-3 py-2",
           active ? activeText : idleItem,
         ].join(" ")}
       >
@@ -302,7 +303,7 @@ export default function Layout({
           <Icon strokeWidth={active ? 2.2 : 1.8} className={`h-full w-full ${active ? activeIcon : ""}`} />
         </span>
         {!compact && (
-          <span className={`relative min-w-0 flex-1 truncate ${nested ? "text-[12.5px]" : "text-[13px]"} ${active ? "font-semibold" : "font-medium"}`}>
+          <span className={`relative min-w-0 flex-1 break-words leading-snug ${nested ? "text-[12.5px]" : "text-[13px]"} ${active ? "font-semibold" : "font-medium"}`}>
             {item.label}
           </span>
         )}
@@ -402,14 +403,14 @@ export default function Layout({
               type="button"
               aria-expanded={aberto}
               onClick={() => setPfaModoAberto(aberto ? "" : grupo.modo)}
-              className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-left text-[12px] font-medium transition-colors cursor-pointer ${
+              className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[12px] font-medium transition-colors cursor-pointer ${
                 ativo
                   ? dark ? "text-slate-100" : "text-slate-900"
                   : dark ? "text-slate-500 hover:text-slate-200" : "text-slate-500 hover:text-slate-900"
               }`}
             >
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${ativo ? "bg-blue-500" : dark ? "bg-slate-600" : "bg-slate-300"}`} />
-              <span className="flex-1 truncate">{grupo.label}</span>
+              <span className="min-w-0 flex-1 break-words leading-snug">{grupo.label}</span>
               <ChevronRight className={`h-3 w-3 opacity-60 transition-transform duration-200 ${aberto ? "rotate-90" : ""}`} />
             </button>
           )}

@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { rotaPlanilhaManhattan } from "./manhattanPlanilha";
 
 // Initial mock data provided by the user
 let dbCapacidades = [
@@ -55,6 +56,9 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Manhattan Capacidades: planilha da pasta Agendamento (mais recente)
+  app.get("/api/manhattan/planilha", rotaPlanilhaManhattan);
 
   // API Route: Get Capacities (with backend proxy and fast-fail fallback)
   app.get("/api/capacidades", async (req, res) => {

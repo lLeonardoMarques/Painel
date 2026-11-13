@@ -420,6 +420,7 @@ function MetricCard({ label1, value1, label2, value2, sub, accent = T.teal }) {
         minWidth: 150,
         position: "relative",
         overflow: "hidden",
+        textAlign: "center", // conteúdo dos cards do PFA centralizado
       }}
     >
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: accent }} />
