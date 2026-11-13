@@ -6,7 +6,7 @@ import { apiFetch } from "../services/api";
 // Projeção de Ocupação do CD (S&OP) — API /api/sop do backend gestao-ppcp.
 // Regras (definidas pelo planejamento):
 //  · dia com foto de ocupação = realizado: a tabela mostra só o real; o gráfico mostra real e projetado;
-//  · hoje mostra a projeção (o realizado de hoje é lançado amanhã, em Administração > Lançar realizado);
+//  · hoje mostra a projeção; o realizado (veículos, pallets e caixas) vem do banco, das views de recebimento e faturamento;
 //  · nada que já aconteceu pode ser alterado: planejado só de amanhã em diante, realizado uma única vez;
 //  · na simulação a tabela é só leitura; a simulação é ajustada pelos parâmetros, variações e posições.
 // ---------------------------------------------------------------------------
@@ -421,7 +421,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   else {
     if (fluxosCat.length > 1 && fluxo === "TOTAL") dicas.push("Para editar, escolha o fluxo (Limpeza ou Perfumaria).");
     if (sim) dicas.push("Simulação: digite veículos e caixas de amanhã em diante e salve. Os parâmetros não mudam na simulação. A base oficial só muda ao aplicar a simulação (painel abaixo).");
-    else dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado é lançado em Administração > Lançar realizado.');
+    else dicas.push('O que já aconteceu não pode ser alterado: o planejado é editável de amanhã em diante. Hoje mostra a sua projeção; o realizado de veículos, pallets e caixas vem direto do banco (recebimento ASN e faturamento) a partir do dia seguinte.');
   }
   dicas.push(...(proj?.avisos || []));
 

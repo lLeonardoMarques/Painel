@@ -12,7 +12,6 @@ import AlertaCategorias from "./components/AlertasCategorias";
 import ManhattanCapacidades from "./components/ManhattanCapacidades";
 import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
 import PainelPFA from "./components/pfa/PainelPFA";
-import LancarRealizado from "./components/LancarRealizado";
 import Parametros from "./components/Parametros";
 import Inicio, { registrarAcesso } from "./components/Inicio";
 
@@ -200,14 +199,14 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // "Ocupação e Estoque" (dashboard) foi removido do sistema
-    if (currentPage === "dashboard") {
+    // "Ocupação e Estoque" (dashboard) e "Lançar realizado" (o realizado agora vem do banco) foram removidos
+    if (currentPage === "dashboard" || currentPage === "lancar-realizado") {
       setCurrentPage(DEFAULT_PAGE);
       return;
     }
 
-    // 🔥 Não-admin não pode acessar Controle de Usuários nem o lançamento do realizado
-    if (user.role !== "admin" && (currentPage === "user-control" || currentPage === "lancar-realizado" || currentPage === "parametros")) {
+    // 🔥 Não-admin não pode acessar Controle de Usuários nem os parâmetros da projeção
+    if (user.role !== "admin" && (currentPage === "user-control" || currentPage === "parametros")) {
       setCurrentPage(DEFAULT_PAGE);
       return;
     }
@@ -496,10 +495,6 @@ export default function App() {
             {/* página "pfa/<modo>/<processo>", escolhida no menu PFA */}
             <PainelPFA theme={theme} modo={currentPage.split("/")[1]} aba={currentPage.split("/")[2]} />
           </div>
-        )}
-
-        {currentPage === "lancar-realizado" && user?.role === "admin" && (
-          <LancarRealizado theme={theme} showNotification={showNotification} />
         )}
 
         {currentPage === "parametros" && user?.role === "admin" && (

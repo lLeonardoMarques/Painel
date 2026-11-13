@@ -20,7 +20,6 @@ import {
   Activity,
   CalendarRange,
   Boxes,
-  ClipboardCheck,
   SlidersHorizontal,
   PackageOpen,
   Ship,
@@ -100,7 +99,6 @@ const PFA_MENU: { modo: string; label: string; itens: NavItem[] }[] = [
 
 const ADMIN_NAV: NavItem[] = [
   { id: "user-control", label: "Usuários e acessos", icon: Users, hint: "Aprovação de perfis" },
-  { id: "lancar-realizado", label: "Lançar realizado", icon: ClipboardCheck, hint: "Realizado S&OP" },
   { id: "parametros", label: "Parâmetros", icon: SlidersHorizontal, hint: "Parâmetros S&OP" },
 ];
 

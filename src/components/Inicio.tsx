@@ -9,7 +9,6 @@ import {
   CalendarRange,
   AlertTriangle,
   Users,
-  ClipboardCheck,
   SlidersHorizontal,
   Boxes,
   RefreshCw,
@@ -55,7 +54,6 @@ const PAGINAS: Record<string, { label: string; desc: string; icon: IconType; adm
   "projecao-cd": { label: "Projeção de Ocupação", desc: "S&OP · CD 1965", icon: CalendarRange, analise: true },
   "alerta-categorias": { label: "Alertas de Categorias", desc: "Ruas x categorias", icon: AlertTriangle, analise: true },
   "user-control": { label: "Usuários e acessos", desc: "Aprovação de perfis", icon: Users, admin: true },
-  "lancar-realizado": { label: "Lançar realizado", desc: "Realizado S&OP", icon: ClipboardCheck, admin: true },
   parametros: { label: "Parâmetros", desc: "Parâmetros S&OP", icon: SlidersHorizontal, admin: true },
 };
 const PADRAO_RAPIDO = ["capacidades", "metas", "painel-gerencial", "manhattan-capacidades"];
