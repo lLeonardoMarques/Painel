@@ -33,12 +33,33 @@ interface ParFluxo {
   atualizadoEm: string | null;
 }
 
+interface PctSemana {
+  semana: number;
+  percentual: number;
+  atualizadoEm: string | null;
+}
+
+interface PctDia {
+  dia: string;
+  nome: string;
+  percentual: number;
+  atualizadoEm: string | null;
+}
+
 interface Campo {
   k: string;
   t: string;
   pct?: boolean;
   inteiro?: boolean;
+  /** maior percentual aceito (padrão 100) */
+  max?: number;
 }
+
+/** Percentual das caixas (semana do mês e dia da semana): aceita até 200%. */
+const CAMPO_PCT_CAIXAS: Campo = { k: "percentual", t: "%", pct: true, max: 200 };
+const DIA_CURTO: Record<string, string> = {
+  MONDAY: "Seg", TUESDAY: "Ter", WEDNESDAY: "Qua", THURSDAY: "Qui", FRIDAY: "Sex", SATURDAY: "Sáb", SUNDAY: "Dom",
+};
 
 const CAMPOS_GERAIS: Campo[] = [
   { k: "senhasReservadasSemana", t: "Senhas reservadas (seg a sex)", inteiro: true },
@@ -70,7 +91,7 @@ const doTexto = (s: string, c: Campo): number | null => {
   if (t === "") return null;
   const n = Number(t);
   if (isNaN(n) || n < 0) return null;
-  if (c.pct) return n > 100 ? null : n / 100;
+  if (c.pct) return n > (c.max ?? 100) ? null : n / 100;
   if (c.inteiro) return Number.isInteger(n) ? n : null;
   return n;
 };
@@ -99,6 +120,10 @@ export default function Parametros({ showNotification }: ParametrosProps) {
   const [fluxos, setFluxos] = useState<ParFluxo[]>([]);
   const [txtGerais, setTxtGerais] = useState<Texto>({});
   const [txtFluxos, setTxtFluxos] = useState<Record<string, Texto>>({});
+  const [semanas, setSemanas] = useState<PctSemana[]>([]);
+  const [dias, setDias] = useState<PctDia[]>([]);
+  const [txtSemanas, setTxtSemanas] = useState<Texto>({});
+  const [txtDias, setTxtDias] = useState<Texto>({});
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -109,12 +134,16 @@ export default function Parametros({ showNotification }: ParametrosProps) {
     (async () => {
       setCarregando(true);
       try {
-        const p = await chamar<{ gerais: Gerais; fluxos: ParFluxo[] }>("/parametros");
+        const p = await chamar<{ gerais: Gerais; fluxos: ParFluxo[]; semanas: PctSemana[]; diasSemana: PctDia[] }>("/parametros");
         if (cancelado) return;
         setGerais(p.gerais);
         setFluxos(p.fluxos);
         setTxtGerais(Object.fromEntries(CAMPOS_GERAIS.map((c) => [c.k, paraTexto((p.gerais as any)[c.k], c)])));
         setTxtFluxos(Object.fromEntries(p.fluxos.map((f) => [f.fluxo, Object.fromEntries(CAMPOS_FLUXO.map((c) => [c.k, paraTexto((f as any)[c.k], c)]))])));
+        setSemanas(p.semanas || []);
+        setDias(p.diasSemana || []);
+        setTxtSemanas(Object.fromEntries((p.semanas || []).map((x) => [String(x.semana), paraTexto(x.percentual, CAMPO_PCT_CAIXAS)])));
+        setTxtDias(Object.fromEntries((p.diasSemana || []).map((x) => [x.dia, paraTexto(x.percentual, CAMPO_PCT_CAIXAS)])));
       } catch (e: any) {
         if (!cancelado) setErro(e.message);
       } finally {
@@ -133,17 +162,26 @@ export default function Parametros({ showNotification }: ParametrosProps) {
 
   const geraisMudou = mudou(txtGerais, gerais, CAMPOS_GERAIS);
   const fluxosMudados = fluxos.filter((f) => mudou(txtFluxos[f.fluxo], f, CAMPOS_FLUXO));
-  const qtdMudancas = (geraisMudou ? 1 : 0) + fluxosMudados.length;
+  const semanasMudadas = semanas.filter((x) => (txtSemanas[String(x.semana)] ?? "") !== paraTexto(x.percentual, CAMPO_PCT_CAIXAS));
+  const diasMudados = dias.filter((x) => (txtDias[x.dia] ?? "") !== paraTexto(x.percentual, CAMPO_PCT_CAIXAS));
+  const qtdMudancas = (geraisMudou ? 1 : 0) + fluxosMudados.length + (semanasMudadas.length ? 1 : 0) + (diasMudados.length ? 1 : 0);
 
   const salvar = async () => {
     const problemas: string[] = [];
     if (geraisMudou && invalidos(txtGerais, CAMPOS_GERAIS).length) problemas.push("Parâmetros gerais");
     for (const f of fluxosMudados) if (invalidos(txtFluxos[f.fluxo], CAMPOS_FLUXO).length) problemas.push(f.nome);
+    if (semanasMudadas.some((x) => doTexto(txtSemanas[String(x.semana)] ?? "", CAMPO_PCT_CAIXAS) == null)) problemas.push("% por semana do mês");
+    if (diasMudados.some((x) => doTexto(txtDias[x.dia] ?? "", CAMPO_PCT_CAIXAS) == null)) problemas.push("% por dia da semana");
     if (problemas.length) {
-      setErro(`Valores inválidos em: ${problemas.join(", ")}. Percentuais vão de 0 a 100; os demais não podem ficar vazios.`);
+      setErro(`Valores inválidos em: ${problemas.join(", ")}. Percentuais vão de 0 a 100 (os das caixas, até 200); os demais não podem ficar vazios.`);
       return;
     }
-    const lista = [geraisMudou ? "parâmetros gerais" : null, ...fluxosMudados.map((f) => f.nome)].filter(Boolean).join(", ");
+    const lista = [
+      geraisMudou ? "parâmetros gerais" : null,
+      ...fluxosMudados.map((f) => f.nome),
+      semanasMudadas.length ? "% por semana do mês" : null,
+      diasMudados.length ? "% por dia da semana" : null,
+    ].filter(Boolean).join(", ");
     if (!window.confirm(`Salvar ${lista}?\n\nOs parâmetros valem para toda a projeção (base oficial e simulações) a partir de agora.`)) return;
     setSalvando(true);
     setErro(null);
@@ -155,6 +193,14 @@ export default function Parametros({ showNotification }: ParametrosProps) {
       for (const f of fluxosMudados) {
         const corpo = Object.fromEntries(CAMPOS_FLUXO.map((c) => [c.k, doTexto(txtFluxos[f.fluxo][c.k], c)]));
         await chamar(`/parametros/fluxos/${f.fluxo}`, { method: "PUT", body: JSON.stringify(corpo) });
+      }
+      if (semanasMudadas.length) {
+        const corpo = semanasMudadas.map((x) => ({ semana: x.semana, percentual: doTexto(txtSemanas[String(x.semana)], CAMPO_PCT_CAIXAS) }));
+        await chamar("/parametros/semanas", { method: "PUT", body: JSON.stringify(corpo) });
+      }
+      if (diasMudados.length) {
+        const corpo = diasMudados.map((x) => ({ dia: x.dia, percentual: doTexto(txtDias[x.dia], CAMPO_PCT_CAIXAS) }));
+        await chamar("/parametros/dias-semana", { method: "PUT", body: JSON.stringify(corpo) });
       }
       showNotification?.("✅ Parâmetros salvos");
     } catch (e: any) {
@@ -237,6 +283,60 @@ export default function Parametros({ showNotification }: ParametrosProps) {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+
+        {/* PERCENTUAL DAS CAIXAS */}
+        <section className={painel}>
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Percentual das caixas (faturamento)</h2>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Caixas do dia = caixas × (1 − corte) × % da semana × % do dia · não muda a agenda de veículos
+            </span>
+          </div>
+          {carregando && !semanas.length ? (
+            <p className="py-6 text-center text-sm text-slate-500">Carregando…</p>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <h3 className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">Por semana do mês</h3>
+                <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                  Semana do calendário (seg a dom): a semana 1 vai do dia 1 até o primeiro domingo. Um mês pode ter até 6 semanas.
+                </p>
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+                  {semanas.map((x) => {
+                    const v = txtSemanas[String(x.semana)] ?? "";
+                    return (
+                      <div key={x.semana}>
+                        <label htmlFor={`par-sem-${x.semana}`} className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">Semana {x.semana}</label>
+                        <input id={`par-sem-${x.semana}`} inputMode="decimal" value={v}
+                          onChange={(e) => setTxtSemanas((t) => ({ ...t, [String(x.semana)]: e.target.value }))}
+                          className={`${campo} ${marca(v !== paraTexto(x.percentual, CAMPO_PCT_CAIXAS), doTexto(v, CAMPO_PCT_CAIXAS) == null)}`} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <h3 className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">Por dia da semana</h3>
+                <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                  Multiplica o % da semana. Ex.: sexta 70% na semana de 80% = 56% das caixas.
+                </p>
+                <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
+                  {dias.map((x) => {
+                    const v = txtDias[x.dia] ?? "";
+                    return (
+                      <div key={x.dia}>
+                        <label htmlFor={`par-dia-${x.dia}`} title={x.nome} className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">{DIA_CURTO[x.dia] || x.nome}</label>
+                        <input id={`par-dia-${x.dia}`} inputMode="decimal" value={v} aria-label={`% ${x.nome}`}
+                          onChange={(e) => setTxtDias((t) => ({ ...t, [x.dia]: e.target.value }))}
+                          className={`${campo} ${marca(v !== paraTexto(x.percentual, CAMPO_PCT_CAIXAS), doTexto(v, CAMPO_PCT_CAIXAS) == null)}`} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </section>
