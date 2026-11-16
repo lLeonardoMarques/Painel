@@ -212,6 +212,8 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const [recarregar, setRecarregar] = useState(0);
 
   const [pendFluxo, setPendFluxo] = useState<Record<string, Pendente>>({});
+  // campos que a pessoa digitou em cada fluxo|dia (os outros do item pendente só carregam o valor que já existia)
+  const [editados, setEditados] = useState<Record<string, string[]>>({});
   const [salvando, setSalvando] = useState(false);
 
   const hoje = proj?.hoje || hojeLocal;
@@ -286,6 +288,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const trocar = (acao: () => void) => {
     if (temPendente && !window.confirm("Há alterações não salvas. Descartar?")) return;
     setPendFluxo({});
+    setEditados({});
     acao();
   };
 
@@ -340,6 +343,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
       }
       return { ...p, [chave]: { ...atual, [campo]: valor } };
     });
+    setEditados((e) => ({ ...e, [chave]: Array.from(new Set([...(e[chave] || []), campo])) }));
   };
 
   const salvarPlanejado = async () => {
@@ -353,6 +357,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
         notificar("✅ Planejado salvo");
       }
       setPendFluxo({});
+    setEditados({});
       setRecarregar((n) => n + 1);
     } catch (e: any) {
       setErro(e.message);
@@ -373,6 +378,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
       if (sim) await chamar(`/simulacoes/${sim}/ajustes-fluxo`, { method: "PATCH", body: itens });
       else await chamar("/lancamentos/fluxos", { method: "PUT", body: itens });
       setPendFluxo({});
+    setEditados({});
       setRecarregar((n) => n + 1);
     } catch (e: any) {
       setErro(e.message);
@@ -595,7 +601,8 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
                       if (editavel(d, c.ed)) {
                         const campoApi = CAMPO_FLUXO[c.k];
                         const pend = pendFluxo[`${fluxoEdicao}|${d.data}`];
-                        const temPend = !!pend && campoApi in pend;
+                        // só o campo digitado mostra o valor pendente; os outros seguem mostrando a projeção atual
+                        const temPend = !!pend && (editados[`${fluxoEdicao}|${d.data}`] || []).includes(campoApi);
                         const val = temPend ? pend[campoApi] : v[c.k];
                         const ajustado = sim ? ajusteSim(d.data)?.[campoApi] != null : (v.aj as string[]).includes(campoApi);
                         return (
