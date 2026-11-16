@@ -1,19 +1,29 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { User } from "./types";
 import LoginScreen from "./components/LoginScreen";
 import Layout from "./components/Layout";
-import Capacidades from "./components/Capacidades";
-import Capacidade_Mes from "./components/Capacidade_Mes";
 import EditMonthModal from "./components/EditMonthModal";
-import UserControlPage from "./components/Usuarios";
-import PainelGerencial from "./components/PainelGerencial";
-import PainelRegionais from "./components/PainelRegionais";
-import AlertaCategorias from "./components/AlertasCategorias";
-import ManhattanCapacidades from "./components/ManhattanCapacidades";
-import ProjecaoOcupacaoCD from "./components/ProjecaoOcupacaoCD";
-import PainelPFA from "./components/pfa/PainelPFA";
-import Parametros from "./components/Parametros";
 import Inicio, { registrarAcesso } from "./components/Inicio";
+
+// Telas carregadas só quando abertas: o navegador não baixa o código de todas na primeira abertura.
+const Capacidades = lazy(() => import("./components/Capacidades"));
+const Capacidade_Mes = lazy(() => import("./components/Capacidade_Mes"));
+const UserControlPage = lazy(() => import("./components/Usuarios"));
+const PainelGerencial = lazy(() => import("./components/PainelGerencial"));
+const PainelRegionais = lazy(() => import("./components/PainelRegionais"));
+const AlertaCategorias = lazy(() => import("./components/AlertasCategorias"));
+const ManhattanCapacidades = lazy(() => import("./components/ManhattanCapacidades"));
+const ProjecaoOcupacaoCD = lazy(() => import("./components/ProjecaoOcupacaoCD"));
+const PainelPFA = lazy(() => import("./components/pfa/PainelPFA"));
+const Parametros = lazy(() => import("./components/Parametros"));
+
+function CarregandoTela() {
+  return (
+    <div className="flex flex-1 items-center justify-center p-10 text-sm text-slate-500 dark:text-slate-400">
+      Carregando…
+    </div>
+  );
+}
 
 // ============================================
 // 🔥 CONSTANTES DE CONFIGURAÇÃO
@@ -420,6 +430,8 @@ export default function App() {
           <Inicio user={user} theme={theme} onPageChange={setCurrentPage} />
         )}
 
+        <Suspense fallback={<CarregandoTela />}>
+
         {currentPage === "capacidades" && (
           <Capacidades 
             activeTab={activeTab} 
@@ -508,6 +520,7 @@ export default function App() {
             onBack={() => setCurrentPage(DEFAULT_PAGE)} 
           />
         )}
+        </Suspense>
 
         <EditMonthModal
           isOpen={isMonthModalOpen}
