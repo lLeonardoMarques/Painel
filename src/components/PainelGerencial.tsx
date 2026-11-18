@@ -33,6 +33,25 @@ import {
   ApiResumoItem,
 } from "../types";
 
+/** Agendas de recebimento do dia de um CD (GET /api/agendas/resumo, tabela agenda_recebimento gravada pelo robô). */
+interface AgendaCdApi {
+  cd: number;
+  capacidade: number;
+  previstas: number;
+  disponivel: number;
+  adicional: number;
+  percentual: number | null;
+  categoriasAcima: {
+    departamento: string;
+    nome: string;
+    capacidade: number;
+    senhas: number;
+    percentual: number | null;
+    semCapacidade: boolean;
+  }[];
+  outrasAcima: number;
+}
+
 interface PainelGerencialProps {
   theme?: "light" | "dark";
   showNotification?: (msg: string) => void;
@@ -47,7 +66,7 @@ interface PainelGerencialProps {
 const TOOLBAR_KEY = "painel_gerencial_show_toolbar";
 
 // ============================================================
-// DADOS DE CONTINGÊNCIA / FALLBACK DA API http://10.210.1.242:8080/api/resumo
+// DADOS DE CONTINGÊNCIA / FALLBACK DA API http://10.210.1.242:8090/api/resumo
 // ============================================================
 const INITIAL_API_RESUMO_DATA: ApiResumoItem[] = [
   {
@@ -340,22 +359,53 @@ function transformApiToPainelData(
         bloqueada: bloqueadaTotal,
         alertaCategorias,
       },
-      agendas: item.agendas || baseCd?.agendas || {
-        percentual: 88,
-        previstas: 120,
-        capacidade: 140,
-        alertaCategorias: [],
-      },
+      agendas: (() => {
+        const rawAgendas = item.agendas || baseCd?.agendas || {
+          percentual: 88,
+          previstas: 120,
+          capacidade: 140,
+          alertaCategorias: [],
+        };
+        const cap = Number(rawAgendas.capacidade) || 0;
+        const prev = Number(rawAgendas.previstas) || 0;
+        const autoPct = cap > 0 ? Number(((prev / cap) * 100).toFixed(2)) : (rawAgendas.percentual || 0);
+
+        const autoCategorias = (rawAgendas.alertaCategorias || []).map((cat: any) => {
+          const cCap = Number(cat.capacidade) || 0;
+          const cSenhas = Number(cat.senhas) || 0;
+          const cPct = cCap > 0 ? Number(((cSenhas / cCap) * 100).toFixed(2)) : (cat.percentual || 0);
+          return {
+            ...cat,
+            percentual: cPct,
+          };
+        });
+
+        return {
+          ...rawAgendas,
+          percentual: autoPct,
+          alertaCategorias: autoCategorias,
+        };
+      })(),
       backlogRecebimento: item.backlogRecebimento || baseCd?.backlogRecebimento || {
         senhasAtraso: 45,
         diffDiaAnterior: -5,
         topFornecedores: [],
       },
-      backlogFaturamento: item.backlogFaturamento || baseCd?.backlogFaturamento || {
-        percentual: 70,
-        capacidade: 1200,
-        backlogPrevisto14h: 840,
-      },
+      backlogFaturamento: (() => {
+        const rawFat = item.backlogFaturamento || baseCd?.backlogFaturamento || {
+          percentual: 70,
+          capacidade: 1200,
+          backlogPrevisto14h: 840,
+        };
+        const cap = Number(rawFat.capacidade) || 0;
+        const prev14h = Number(rawFat.backlogPrevisto14h) || 0;
+        const autoPct = cap > 0 ? Number(((prev14h / cap) * 100).toFixed(2)) : (rawFat.percentual || 0);
+
+        return {
+          ...rawFat,
+          percentual: autoPct,
+        };
+      })(),
     };
   });
 
@@ -378,6 +428,17 @@ export const formatPercent = (val: number | string | undefined | null): string =
   });
 };
 
+// Helper para cálculo percentual automático com 2 casas decimais no padrão brasileiro (ex: 80,55)
+export const calcPercent = (
+  numerador: number | string | undefined | null,
+  denominador: number | string | undefined | null
+): number => {
+  const num = typeof numerador === "string" ? parseFloat(numerador.replace(",", ".")) : Number(numerador);
+  const den = typeof denominador === "string" ? parseFloat(denominador.replace(",", ".")) : Number(denominador);
+  if (!den || isNaN(den) || den <= 0 || isNaN(num) || num < 0) return 0;
+  return Number(((num / den) * 100).toFixed(2));
+};
+
 interface FieldProps {
   label: string;
   value: string | number;
@@ -389,6 +450,9 @@ interface FieldProps {
   suffix?: string;
   className?: string;
   isDark?: boolean;
+  readOnly?: boolean;
+  badge?: string;
+  hint?: string;
 }
 
 function Field({
@@ -402,16 +466,26 @@ function Field({
   suffix,
   className = "",
   isDark = false,
+  readOnly = false,
+  badge,
+  hint,
 }: FieldProps) {
   return (
     <label className={`flex flex-col gap-0.5 ${className}`}>
-      <span
-        className={`text-[10px] font-bold uppercase tracking-wide ${
-          isDark ? "text-slate-400" : "text-slate-500"
-        }`}
-      >
-        {label}
-      </span>
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className={`text-[10px] font-bold uppercase tracking-wide ${
+            isDark ? "text-slate-400" : "text-slate-500"
+          }`}
+        >
+          {label}
+        </span>
+        {badge && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 whitespace-nowrap">
+            {badge}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-1">
         <input
           type={type}
@@ -419,9 +493,14 @@ function Field({
           step={step}
           min={min}
           max={max}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
           className={`w-full px-2 py-1 text-xs font-mono border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-            isDark
+            readOnly
+              ? isDark
+                ? "bg-slate-800/60 border-slate-700/60 text-blue-300 font-bold cursor-not-allowed"
+                : "bg-slate-100 border-slate-200 text-blue-700 font-bold cursor-not-allowed"
+              : isDark
               ? "bg-slate-800 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-blue-400"
               : "bg-white border-slate-300 text-slate-900 focus:border-blue-500"
           }`}
@@ -436,6 +515,11 @@ function Field({
           </span>
         )}
       </div>
+      {hint && (
+        <span className={`text-[9px] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+          {hint}
+        </span>
+      )}
     </label>
   );
 }
@@ -512,6 +596,9 @@ export default function PainelGerencial({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [apiStatusSource, setApiStatusSource] = useState<"LIVE" | "CACHE">("LIVE");
+  // Agendas de recebimento do dia, por CD (vindas do banco; sem elas, vale a base de exemplo)
+  const [agendasDia, setAgendasDia] = useState<Record<number, AgendaCdApi>>({});
+  const [agendasAtualizadoEm, setAgendasAtualizadoEm] = useState<string | null>(null);
 
   // Estado do Modal de Edição Manual
   const [showEditorModal, setShowEditorModal] = useState(false);
@@ -519,6 +606,15 @@ export default function PainelGerencial({
 
   // Estado do menu de seleção rápida de status no cabeçalho
   const [openStatusMenuCd, setOpenStatusMenuCd] = useState<number | null>(null);
+
+  // Overrides manuais específicos de status (persistem independente de outros dados para SP e Regionais)
+  const [manualStatusOverrides, setManualStatusOverrides] = useState<Record<number, "NORMAL" | "ATENÇÃO" | "CRÍTICO">>(() => {
+    try {
+      const saved = localStorage.getItem("painel_gerencial_manual_status_v2");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
 
   // Overrides manuais persistidos no navegador
   const [customOverrides, setCustomOverrides] = useState<Record<number, StatusCdGerencial>>(() => {
@@ -541,19 +637,71 @@ export default function PainelGerencial({
   const data = useMemo(() => {
     const base = transformApiToPainelData(apiRawItems, isRegionais);
     const mergedCds = base.cds.map((cd) => {
-      const override = customOverrides[cd.cd];
-      if (override) {
-        // 🔥 CRÍTICO: O Primeiro Quadrante de Informações (Ocupação CD: total, ocupada, livre, bloqueada, percentual, subcategorias)
-        // é sincronizado pela API externa (http://10.210.1.242:8080/api/resumo).
-        // As edições manuais são aplicadas aos quadrantes operacionais e ao Status Geral (conforme solicitado pelo usuário).
-        return {
-          ...cd,
-          ...override,
-          ocupacao: cd.ocupacao, // 1º Quadrante 100% fiel à API externa
-          statusGeral: override.statusGeral || cd.statusGeral, // Permite alterar o status manualmente
+      const cdNum = Number(cd.cd);
+      const override = customOverrides[cdNum] || customOverrides[cd.cd];
+      const manualStatus = manualStatusOverrides[cdNum] ?? manualStatusOverrides[String(cd.cd) as any] ?? override?.statusGeral;
+
+      const merged: StatusCdGerencial = {
+        ...cd,
+        ...(override || {}),
+        ocupacao: cd.ocupacao, // 1º Quadrante 100% fiel à API externa (http://10.210.1.242:8090/api/resumo)
+        statusGeral: (manualStatus || override?.statusGeral || cd.statusGeral) as "NORMAL" | "ATENÇÃO" | "CRÍTICO",
+      };
+
+      // Agendas do dia vindas do banco (robô) valem mais que a base de exemplo e a edição manual
+      const agendaDb = agendasDia[cdNum];
+      if (agendaDb) {
+        merged.agendas = {
+          percentual: agendaDb.percentual ?? 0,
+          previstas: agendaDb.previstas,
+          capacidade: agendaDb.capacidade,
+          outrasAcima: agendaDb.outrasAcima,
+          alertaCategorias: agendaDb.categoriasAcima.map((c) => ({
+            nome: c.nome,
+            senhas: c.senhas,
+            capacidade: c.capacidade,
+            semCapacidade: c.semCapacidade,
+            // sem capacidade: qualquer senha já estoura (vai para o topo)
+            percentual: c.semCapacidade ? Number.POSITIVE_INFINITY : c.percentual ?? 0,
+          })),
         };
       }
-      return cd;
+
+      // Garantia de cálculo automático de % Agenda: Prevista (hoje) ÷ Capacidade × 100
+      if (merged.agendas) {
+        const autoPct =
+          merged.agendas.capacidade > 0
+            ? Number(((merged.agendas.previstas / merged.agendas.capacidade) * 100).toFixed(1))
+            : merged.agendas.percentual;
+
+        const autoCategorias = (merged.agendas.alertaCategorias || []).map((cat) => {
+          if (cat.capacidade && cat.capacidade > 0 && cat.senhas !== undefined) {
+            return {
+              ...cat,
+              percentual: Number((((cat.senhas || 0) / cat.capacidade) * 100).toFixed(1)),
+            };
+          }
+          return cat;
+        });
+
+        merged.agendas = {
+          ...merged.agendas,
+          percentual: autoPct,
+          alertaCategorias: autoCategorias,
+        };
+      }
+
+      // Garantia de cálculo automático de % Backlog Faturamento: Previsto 14h ÷ Capacidade × 100
+      if (merged.backlogFaturamento && merged.backlogFaturamento.capacidade > 0) {
+        merged.backlogFaturamento = {
+          ...merged.backlogFaturamento,
+          percentual: Number(
+            ((merged.backlogFaturamento.backlogPrevisto14h / merged.backlogFaturamento.capacidade) * 100).toFixed(1)
+          ),
+        };
+      }
+
+      return merged;
     });
     return {
       ...base,
@@ -561,7 +709,7 @@ export default function PainelGerencial({
       ...(globalOverrides.dataReferencia ? { dataReferencia: globalOverrides.dataReferencia } : {}),
       cds: mergedCds,
     };
-  }, [apiRawItems, isRegionais, customOverrides, globalOverrides]);
+  }, [apiRawItems, isRegionais, customOverrides, globalOverrides, manualStatusOverrides, agendasDia]);
 
   const updateCd = (cdIndex: number, updater: (cd: StatusCdGerencial) => StatusCdGerencial) => {
     const targetCd = data.cds[cdIndex];
@@ -578,14 +726,81 @@ export default function PainelGerencial({
     });
   };
 
-  const handleUpdateStatusGeral = (cdIndex: number, newStatus: "NORMAL" | "ATENÇÃO" | "CRÍTICO") => {
-    updateCd(cdIndex, (cd) => ({
-      ...cd,
-      statusGeral: newStatus,
-    }));
+  // Alteração manual de status com garantia de aplicação para SP e Regionais
+  const handleUpdateStatusGeral = (
+    cdIdentifier: number | string,
+    newStatus: "NORMAL" | "ATENÇÃO" | "CRÍTICO"
+  ) => {
+    let cdCode = Number(cdIdentifier);
+    let cdIndex = -1;
+
+    // Se passou o índice da matriz
+    if (typeof cdIdentifier === "number" && cdIdentifier >= 0 && cdIdentifier < data.cds.length && data.cds[cdIdentifier]) {
+      cdCode = data.cds[cdIdentifier].cd;
+      cdIndex = cdIdentifier;
+    } else {
+      cdIndex = data.cds.findIndex((c) => Number(c.cd) === cdCode);
+      if (cdIndex >= 0) {
+        cdCode = data.cds[cdIndex].cd;
+      }
+    }
+
+    const numericCd = Number(cdCode);
+
+    setManualStatusOverrides((prev) => {
+      const next = { ...prev, [numericCd]: newStatus };
+      try {
+        localStorage.setItem("painel_gerencial_manual_status_v2", JSON.stringify(next));
+      } catch (err) {
+        console.warn("Erro ao salvar status manual:", err);
+      }
+      return next;
+    });
+
+    if (cdIndex >= 0) {
+      updateCd(cdIndex, (cd) => ({
+        ...cd,
+        statusGeral: newStatus,
+      }));
+    }
+
+    const cdName = data.cds.find((c) => Number(c.cd) === numericCd)?.nome || `CD ${numericCd}`;
     if (showNotification) {
-      const cdName = data.cds[cdIndex]?.nome || "CD";
-      showNotification(`✅ Status do ${cdName} alterado para ${newStatus}`);
+      showNotification(`✅ Status do ${cdName} alterado manualmente para ${newStatus}`);
+    }
+  };
+
+  // Restaura status original calculado pela API
+  const handleResetStatusGeral = (cdIdentifier: number | string) => {
+    const numericCd = Number(cdIdentifier);
+    setManualStatusOverrides((prev) => {
+      const next = { ...prev };
+      delete next[numericCd];
+      try {
+        localStorage.setItem("painel_gerencial_manual_status_v2", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    const cdIndex = data.cds.findIndex((c) => Number(c.cd) === numericCd);
+    if (cdIndex >= 0) {
+      setCustomOverrides((prev) => {
+        const next = { ...prev };
+        if (next[numericCd]) {
+          const clone = { ...next[numericCd] };
+          delete (clone as any).statusGeral;
+          next[numericCd] = clone;
+        }
+        try {
+          localStorage.setItem("painel_gerencial_custom_overrides_v2", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+
+    const cdName = data.cds.find((c) => Number(c.cd) === numericCd)?.nome || `CD ${numericCd}`;
+    if (showNotification) {
+      showNotification(`🔄 Status do ${cdName} restaurado para o cálculo automático da API`);
     }
   };
 
@@ -606,12 +821,14 @@ export default function PainelGerencial({
 
   const handleResetData = () => {
     setCustomOverrides({});
+    setManualStatusOverrides({});
     setGlobalOverrides({});
     try {
       localStorage.removeItem("painel_gerencial_custom_overrides_v2");
+      localStorage.removeItem("painel_gerencial_manual_status_v2");
       localStorage.removeItem("painel_gerencial_global_overrides_v2");
     } catch {}
-    if (showNotification) showNotification("🔄 Dados manuais resetados para os valores padrão da API/mock!");
+    if (showNotification) showNotification("🔄 Dados manuais e status resetados para os valores padrão da API/mock!");
   };
 
   // Data/hora atualizada
@@ -622,9 +839,25 @@ export default function PainelGerencial({
   const [currentTime, setCurrentTime] = useState<string>(() => getFormattedDateTime().time);
   const [lastUpdated, setLastUpdated] = useState<string>(() => getFormattedDateTime().full);
 
-  // Função para buscar dados da API http://10.210.1.242:8080/api/resumo
+  // Agendas do dia: GET /api/agendas/resumo (backend gestao-ppcp)
+  const fetchAgendas = useCallback(async () => {
+    try {
+      const r = await fetch("/api/agendas/resumo", { headers: { Accept: "application/json" }, cache: "no-store" });
+      if (!r.ok) return;
+      const json = await r.json();
+      const porCd: Record<number, AgendaCdApi> = {};
+      for (const c of json.cds || []) porCd[Number(c.cd)] = c;
+      setAgendasDia(porCd);
+      setAgendasAtualizadoEm(json.atualizadoEm || null);
+    } catch (err) {
+      console.warn("Agendas do dia indisponíveis:", err);
+    }
+  }, []);
+
+  // Função para buscar dados da API http://10.210.1.242:8090/api/resumo
   const fetchResumoData = useCallback(async (notifyOnSuccess: boolean = false) => {
     setIsRefreshing(true);
+    void fetchAgendas();
     let success = false;
     let source: "LIVE" | "CACHE" = "CACHE";
 
@@ -655,10 +888,10 @@ export default function PainelGerencial({
       console.warn("Proxy /api/resumo falhou ou timeout:", err);
     }
 
-    // 2. Fallback direto no backend gestao-ppcp (porta 8080), caso o proxy /api/resumo falhe
+    // 2. Fallback direto se estiver na intranet corporativa (tentativa direta)
     if (!success && typeof window !== "undefined") {
       try {
-        const directRes = await fetch("http://10.210.1.242:8080/api/resumo", {
+        const directRes = await fetch("http://10.210.1.242:8090/api/resumo", {
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
@@ -685,7 +918,7 @@ export default function PainelGerencial({
 
     if (success) {
       if (notifyOnSuccess && showNotification) {
-        showNotification("✅ 1º Quadrante (Ocupação CD) sincronizado via API externa http://10.210.1.242:8080/api/resumo!");
+        showNotification("✅ 1º Quadrante (Ocupação CD) sincronizado via API externa http://10.210.1.242:8090/api/resumo!");
       }
     } else {
       const { date, time, full } = getFormattedDateTime("2026-10-14");
@@ -693,10 +926,10 @@ export default function PainelGerencial({
       setCurrentTime(time);
       setLastUpdated(full);
       if (notifyOnSuccess && showNotification) {
-        showNotification("ℹ️ 1º Quadrante atualizado com a base de contingência da API 10.210.1.242:8080");
+        showNotification("ℹ️ 1º Quadrante atualizado com a base de contingência da API 10.210.1.242:8090");
       }
     }
-  }, [showNotification]);
+  }, [showNotification, fetchAgendas]);
 
   // Carrega na montagem e ao trocar de variante
   useEffect(() => {
@@ -740,14 +973,14 @@ export default function PainelGerencial({
     return isRegionais
       ? `📊 *STATUS DIÁRIO DA OPERAÇÃO — REGIONAIS FORA DE SP (CDs 409, 1974, 1979, 1984, 1953)*
 🕒 ${currentDate} às ${currentTime} | Supply Chain / Regionais Fora de SP
-Fonte: API Corporativa http://10.210.1.242:8080/api/resumo
+Fonte: API Corporativa http://10.210.1.242:8090/api/resumo
 
 ${cdLines}
 
 📎 _Acompanha imagem do Painel Gerencial para colar no e-mail._`
       : `📊 *STATUS DIÁRIO DA OPERAÇÃO — SÃO PAULO (CDs 1965, 1942, 930, 7801)*
 🕒 ${currentDate} às ${currentTime} | ${data.distribuicao}
-Fonte: API Corporativa http://10.210.1.242:8080/api/resumo
+Fonte: API Corporativa http://10.210.1.242:8090/api/resumo
 
 ${cdLines}
 
@@ -1157,6 +1390,10 @@ ${cdLines}
           color: var(--ink);
           min-width: 0;
           flex-shrink: 0;
+          position: relative;
+        }
+        .cd-head.menu-open {
+          z-index: 60 !important;
         }
         .cd-head.corner {
           border-right: 1px solid var(--line);
@@ -1178,8 +1415,8 @@ ${cdLines}
         .status-pill {
           font-size: clamp(7.5px, 0.6vw, 9px);
           font-weight: 800;
-          padding: 2px 6px;
-          border-radius: 3px;
+          padding: 2px 7px;
+          border-radius: 4px;
           text-transform: uppercase;
           letter-spacing: .3px;
           white-space: nowrap;
@@ -1189,11 +1426,18 @@ ${cdLines}
           cursor: pointer;
           display: inline-flex;
           align-items: center;
-          gap: 2.5px;
+          gap: 3px;
           user-select: none;
-          transition: filter 0.15s ease, transform 0.1s ease;
+          transition: all 0.15s ease;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
         }
-        .status-pill:hover { filter: brightness(0.92); }
+        .status-pill:hover {
+          filter: brightness(0.92);
+          transform: translateY(-0.5px);
+        }
+        .status-pill:active {
+          transform: translateY(0.5px);
+        }
         .pill-ok { background: var(--ok-bg); color: var(--ok); }
         .pill-warn { background: var(--warn-bg); color: var(--warn); }
         .pill-bad { background: var(--bad-bg); color: var(--bad); }
@@ -1496,21 +1740,21 @@ ${cdLines}
               <span className="text-slate-400">·</span>
               <span className="text-slate-500 font-normal">{lastUpdated}</span>
 
-              {/* Badge de status da API http://10.210.1.242:8080/api/resumo */}
+              {/* Badge de status da API http://10.210.1.242:8090/api/resumo */}
               <span
                 className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
                   apiStatusSource === "LIVE"
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                     : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
                 }`}
-                title="Conectado ao endpoint http://10.210.1.242:8080/api/resumo"
+                title="Conectado ao endpoint http://10.210.1.242:8090/api/resumo"
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     apiStatusSource === "LIVE" ? "bg-emerald-500 animate-pulse" : "bg-blue-500"
                   }`}
                 />
-                {apiStatusSource === "LIVE" ? "API 10.210.1.242:8080 Conectada" : "API 10.210.1.242:8080 (Sincronizada)"}
+                {apiStatusSource === "LIVE" ? "API 10.210.1.242:8090 Conectada" : "API 10.210.1.242:8090 (Sincronizada)"}
               </span>
             </div>
 
@@ -1587,7 +1831,7 @@ ${cdLines}
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                title="Atualizar dados da API http://10.210.1.242:8080/api/resumo"
+                title="Atualizar dados da API http://10.210.1.242:8090/api/resumo"
                 className="exec-btn"
               >
                 <RefreshCw
@@ -1690,119 +1934,187 @@ ${cdLines}
           >
             {/* HEADER */}
             <div className="cd-head corner"></div>
-            {data.cds.map((cd, cdIdx) => (
-              <div key={cd.cd} className="cd-head relative group/cd">
-                <div className="flex items-center justify-between w-full">
-                  <h3>{cd.nome}</h3>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditorTab(cdIdx);
-                      setShowEditorModal(true);
-                    }}
-                    title={`Editar valores do ${cd.nome}`}
-                    className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
-                  >
-                    <Pencil className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenStatusMenuCd(openStatusMenuCd === cd.cd ? null : cd.cd);
-                    }}
-                    title={`Clique para alterar o status do ${cd.nome} manualmente (Normal / Atenção / Crítico)`}
-                    className={`status-pill ${
-                      cd.statusGeral === "CRÍTICO"
-                        ? "pill-bad"
-                        : cd.statusGeral === "ATENÇÃO"
-                        ? "pill-warn"
-                        : "pill-ok"
-                    }`}
-                  >
-                    <span>
-                      {cd.statusGeral === "CRÍTICO"
-                        ? "Crítico"
-                        : cd.statusGeral === "ATENÇÃO"
-                        ? "Atenção"
-                        : "Normal"}
-                    </span>
-                    <ChevronDown className="w-2.5 h-2.5 opacity-60 hide-on-capture" />
-                  </button>
+            {data.cds.map((cd, cdIdx) => {
+              const isOpen = openStatusMenuCd === Number(cd.cd);
+              const isManual = Boolean(
+                manualStatusOverrides[Number(cd.cd)] ||
+                manualStatusOverrides[String(cd.cd) as any] ||
+                customOverrides[Number(cd.cd)]?.statusGeral
+              );
 
-                  {/* Dropdown de alteração de status do CD */}
-                  {openStatusMenuCd === cd.cd && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setOpenStatusMenuCd(null)}
-                      />
-                      <div className="absolute top-full right-0 mt-1 z-50 bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 py-1 px-1 min-w-[130px] text-xs font-semibold hide-on-capture animate-in fade-in zoom-in-95 duration-100">
-                        <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider border-b border-slate-100 dark:border-slate-800 mb-1">
-                          Definir Status
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleUpdateStatusGeral(cdIdx, "NORMAL");
-                            setOpenStatusMenuCd(null);
-                          }}
-                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer ${
-                            cd.statusGeral === "NORMAL"
-                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold"
-                              : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-                          }`}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                            Normal
-                          </span>
-                          {cd.statusGeral === "NORMAL" && <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleUpdateStatusGeral(cdIdx, "ATENÇÃO");
-                            setOpenStatusMenuCd(null);
-                          }}
-                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer ${
-                            cd.statusGeral === "ATENÇÃO"
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold"
-                              : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-                          }`}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            Atenção
-                          </span>
-                          {cd.statusGeral === "ATENÇÃO" && <Check className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleUpdateStatusGeral(cdIdx, "CRÍTICO");
-                            setOpenStatusMenuCd(null);
-                          }}
-                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer ${
+              return (
+                <div
+                  key={cd.cd}
+                  className={`cd-head relative group/cd ${isOpen ? "menu-open !z-50" : "z-10"}`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+                    <h3 className="truncate" title={cd.nome}>{cd.nome}</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditorTab(cdIdx);
+                        setShowEditorModal(true);
+                      }}
+                      title={`Editar valores e status do ${cd.nome}`}
+                      className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-75 hover:opacity-100 cursor-pointer hide-on-capture"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+
+                  <div className="relative flex items-center shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenStatusMenuCd(isOpen ? null : Number(cd.cd));
+                      }}
+                      title={`Clique para alterar o status do ${cd.nome} manualmente (Normal / Atenção / Crítico)${
+                        isManual ? " [Alterado Manualmente]" : ""
+                      }`}
+                      className={`status-pill cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs ${
+                        cd.statusGeral === "CRÍTICO"
+                          ? "pill-bad ring-1 ring-rose-500/40"
+                          : cd.statusGeral === "ATENÇÃO"
+                          ? "pill-warn ring-1 ring-amber-500/40"
+                          : "pill-ok ring-1 ring-emerald-500/40"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
                             cd.statusGeral === "CRÍTICO"
-                              ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 font-bold"
-                              : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                              ? "bg-rose-500"
+                              : cd.statusGeral === "ATENÇÃO"
+                              ? "bg-amber-500"
+                              : "bg-emerald-500"
                           }`}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-rose-500" />
-                            Crítico
-                          </span>
-                          {cd.statusGeral === "CRÍTICO" && <Check className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />}
-                        </button>
-                      </div>
-                    </>
-                  )}
+                        />
+                        {cd.statusGeral === "CRÍTICO"
+                          ? "Crítico"
+                          : cd.statusGeral === "ATENÇÃO"
+                          ? "Atenção"
+                          : "Normal"}
+                      </span>
+                      <ChevronDown
+                        className={`w-2.5 h-2.5 opacity-70 transition-transform duration-150 hide-on-capture ${
+                          isOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {/* Dropdown flutuante de alteração manual de status do CD */}
+                    {isOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setOpenStatusMenuCd(null)}
+                        />
+                        <div className="absolute top-full right-0 mt-1.5 z-50 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 px-2 min-w-[175px] text-xs font-semibold hide-on-capture animate-in fade-in zoom-in-95 duration-100">
+                          <div className="px-2 pb-1.5 mb-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                              Alterar Status
+                            </span>
+                            <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">
+                              {cd.nome}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            {/* Opção NORMAL */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatusGeral(cd.cd, "NORMAL");
+                                setOpenStatusMenuCd(null);
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                                cd.statusGeral === "NORMAL"
+                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold ring-1 ring-emerald-500/30"
+                                  : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />
+                                Normal
+                              </span>
+                              {cd.statusGeral === "NORMAL" && (
+                                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                              )}
+                            </button>
+
+                            {/* Opção ATENÇÃO */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatusGeral(cd.cd, "ATENÇÃO");
+                                setOpenStatusMenuCd(null);
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                                cd.statusGeral === "ATENÇÃO"
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold ring-1 ring-amber-500/30"
+                                  : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-xs" />
+                                Atenção
+                              </span>
+                              {cd.statusGeral === "ATENÇÃO" && (
+                                <Check className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                              )}
+                            </button>
+
+                            {/* Opção CRÍTICO */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatusGeral(cd.cd, "CRÍTICO");
+                                setOpenStatusMenuCd(null);
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                                cd.statusGeral === "CRÍTICO"
+                                  ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 font-bold ring-1 ring-rose-500/30"
+                                  : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-xs" />
+                                Crítico
+                              </span>
+                              {cd.statusGeral === "CRÍTICO" && (
+                                <Check className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Botão de Restaurar Status da API se houver override manual */}
+                          {isManual && (
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResetStatusGeral(cd.cd);
+                                  setOpenStatusMenuCd(null);
+                                }}
+                                className="w-full text-center text-[10px] text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <RotateCcw className="w-2.5 h-2.5" />
+                                Restaurar da API
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* LINHA 1: OCUPAÇÃO (PREENCHIDO DIRETAMENTE PELA API /api/resumo) */}
             <div className="row-label">
@@ -1890,16 +2202,30 @@ ${cdLines}
                 <br />
                 Recebimento CD
               </h2>
+              {agendasAtualizadoEm && (
+                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4 }} title="Arquivo de agendamento mais recente gravado pelo robô">
+                  arquivo de {new Date(agendasAtualizadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              )}
             </div>
             {data.cds.map((cd) => {
-              const pct = cd.agendas.percentual;
+              const pct = cd.agendas.capacidade > 0 && cd.agendas.previstas !== undefined
+                ? Number(((cd.agendas.previstas / cd.agendas.capacidade) * 100).toFixed(2))
+                : cd.agendas.percentual;
               const statusClass = pct > 105 ? "bad" : pct >= 95 ? "warn" : "ok";
               const categoriasAgendas = (cd.agendas.alertaCategorias || [])
+                .map((cat) => {
+                  const autoPct = cat.capacidade && cat.capacidade > 0 && cat.senhas !== undefined
+                    ? Number(((cat.senhas / cat.capacidade) * 100).toFixed(2))
+                    : cat.percentual;
+                  return { ...cat, percentual: autoPct };
+                })
                 .filter((cat) => cat.percentual > 100)
                 .sort((a, b) => b.percentual - a.percentual);
               const hasAlerts = categoriasAgendas.length > 0;
-              const hasMore = categoriasAgendas.length > 3;
-              const qtdExtra = hasMore ? categoriasAgendas.length - 3 : 0;
+              // só as 3 com maior estouro; a API já manda só elas e diz quantas sobraram
+              const qtdExtra = Math.max(0, categoriasAgendas.length - 3) + (cd.agendas.outrasAcima || 0);
+              const hasMore = qtdExtra > 0;
               return (
                 <div key={`agend-${cd.cd}`} className="cell">
                   <div className="gauge-top">
@@ -1930,14 +2256,14 @@ ${cdLines}
                     >
                       <div className="alert-title">Categorias acima da capacidade</div>
                       <ul className="alert-list">
-                        {categoriasAgendas.map((cat, i) => (
+                        {categoriasAgendas.slice(0, 3).map((cat, i) => (
                           <li key={i}>
                             <span className="name" title={cat.nome}>
                               {cat.nome}
                             </span>
                             <span className="val">
-                              {formatPercent(cat.percentual)}%
-                              {cat.senhas !== undefined ? ` (${cat.senhas} senhas)` : ""}
+                              {cat.semCapacidade ? "sem capacidade" : `${formatPercent(cat.percentual)}%`}
+                              {cat.senhas !== undefined ? ` (${cat.senhas} ${cat.senhas === 1 ? "senha" : "senhas"})` : ""}
                             </span>
                           </li>
                         ))}
@@ -2017,7 +2343,9 @@ ${cdLines}
               </h2>
             </div>
             {data.cds.map((cd) => {
-              const pct = cd.backlogFaturamento.percentual;
+              const pct = cd.backlogFaturamento.capacidade > 0 && cd.backlogFaturamento.backlogPrevisto14h !== undefined
+                ? Number(((cd.backlogFaturamento.backlogPrevisto14h / cd.backlogFaturamento.capacidade) * 100).toFixed(2))
+                : cd.backlogFaturamento.percentual;
               const statusClass = pct > 100 ? "bad" : pct >= 80 ? "warn" : "ok";
               return (
                 <div key={`backlog-fat-${cd.cd}`} className="cell">
@@ -2055,7 +2383,7 @@ ${cdLines}
           <div className="footer">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Fonte: API Corporativa (http://10.210.1.242:8080/api/resumo) · {currentDate} às {currentTime}
+              Fonte: API Corporativa (http://10.210.1.242:8090/api/resumo) · {currentDate} às {currentTime}
             </span>
             <span>GPA Logistics · Status Operação Centros de Distribuição</span>
           </div>
@@ -2364,6 +2692,92 @@ ${cdLines}
                 {/* Visualização de um CD específico */}
                 {editorTab < data.cds.length && data.cds[editorTab] && (
                   <>
+                    {/* Alteração Manual do Status Geral da Operação */}
+                    <section
+                      className={`border-2 rounded-xl p-4 transition-colors ${
+                        isDark ? "border-blue-500/30 bg-blue-950/20" : "border-blue-200 bg-blue-50/50"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div>
+                          <h4
+                            className={`text-xs font-black uppercase tracking-wide flex items-center gap-1.5 ${
+                              isDark ? "text-blue-400" : "text-blue-700"
+                            }`}
+                          >
+                            <Sliders className="w-4 h-4 text-blue-500" />
+                            Status Geral da Operação — {data.cds[editorTab].nome}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Altere manualmente o status deste CD (aplicável para Painel Gerencial SP ou Regionais):
+                          </p>
+                        </div>
+                        {(manualStatusOverrides[Number(data.cds[editorTab].cd)] || manualStatusOverrides[String(data.cds[editorTab].cd) as any] || customOverrides[Number(data.cds[editorTab].cd)]?.statusGeral) && (
+                          <button
+                            type="button"
+                            onClick={() => handleResetStatusGeral(data.cds[editorTab].cd)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:text-blue-600 px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs cursor-pointer transition-colors"
+                          >
+                            <RotateCcw className="w-3 h-3 text-slate-500" />
+                            Restaurar status da API
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2.5">
+                        {/* Botão NORMAL */}
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatusGeral(data.cds[editorTab].cd, "NORMAL")}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 font-bold text-xs cursor-pointer transition-all ${
+                            data.cds[editorTab].statusGeral === "NORMAL"
+                              ? "bg-emerald-500 text-white border-emerald-600 shadow-md scale-[1.02]"
+                              : isDark
+                              ? "bg-slate-800/80 border-slate-700 text-slate-300 hover:border-emerald-500/50 hover:bg-emerald-950/20"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-emerald-500/50 hover:bg-emerald-50/50"
+                          }`}
+                        >
+                          <span className={`w-2.5 h-2.5 rounded-full ${data.cds[editorTab].statusGeral === "NORMAL" ? "bg-white" : "bg-emerald-500"}`} />
+                          NORMAL
+                          {data.cds[editorTab].statusGeral === "NORMAL" && <Check className="w-3.5 h-3.5" />}
+                        </button>
+
+                        {/* Botão ATENÇÃO */}
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatusGeral(data.cds[editorTab].cd, "ATENÇÃO")}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 font-bold text-xs cursor-pointer transition-all ${
+                            data.cds[editorTab].statusGeral === "ATENÇÃO"
+                              ? "bg-amber-500 text-white border-amber-600 shadow-md scale-[1.02]"
+                              : isDark
+                              ? "bg-slate-800/80 border-slate-700 text-slate-300 hover:border-amber-500/50 hover:bg-amber-950/20"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-amber-500/50 hover:bg-amber-50/50"
+                          }`}
+                        >
+                          <span className={`w-2.5 h-2.5 rounded-full ${data.cds[editorTab].statusGeral === "ATENÇÃO" ? "bg-white" : "bg-amber-500"}`} />
+                          ATENÇÃO
+                          {data.cds[editorTab].statusGeral === "ATENÇÃO" && <Check className="w-3.5 h-3.5" />}
+                        </button>
+
+                        {/* Botão CRÍTICO */}
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatusGeral(data.cds[editorTab].cd, "CRÍTICO")}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 font-bold text-xs cursor-pointer transition-all ${
+                            data.cds[editorTab].statusGeral === "CRÍTICO"
+                              ? "bg-rose-500 text-white border-rose-600 shadow-md scale-[1.02]"
+                              : isDark
+                              ? "bg-slate-800/80 border-slate-700 text-slate-300 hover:border-rose-500/50 hover:bg-rose-950/20"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-rose-500/50 hover:bg-rose-50/50"
+                          }`}
+                        >
+                          <span className={`w-2.5 h-2.5 rounded-full ${data.cds[editorTab].statusGeral === "CRÍTICO" ? "bg-white" : "bg-rose-500"}`} />
+                          CRÍTICO
+                          {data.cds[editorTab].statusGeral === "CRÍTICO" && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </section>
+
                     {/* Identificação */}
                     <section
                       className={`border rounded-xl p-4 transition-colors ${
@@ -2412,10 +2826,7 @@ ${cdLines}
                           <select
                             value={data.cds[editorTab].statusGeral}
                             onChange={(e) =>
-                              updateCd(editorTab, (cd) => {
-                                cd.statusGeral = e.target.value as any;
-                                return cd;
-                              })
+                              handleUpdateStatusGeral(data.cds[editorTab].cd, e.target.value as any)
                             }
                             className={`w-full px-2 py-1 text-xs font-bold border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                               isDark
@@ -2446,7 +2857,7 @@ ${cdLines}
                           >
                             <span>📦 1º Quadrante: Ocupação CD</span>
                             <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                              API Externa: 10.210.1.242:8080
+                              API Externa: 10.210.1.242:8090
                             </span>
                           </h4>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -2655,7 +3066,7 @@ ${cdLines}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <Field
                           isDark={isDark}
-                          label="% Agendas"
+                          label="% Agendas (Auto: Previstas ÷ Capacidade)"
                           type="number"
                           step="0.01"
                           value={data.cds[editorTab].agendas.percentual}
@@ -2674,7 +3085,11 @@ ${cdLines}
                           value={data.cds[editorTab].agendas.previstas}
                           onChange={(v) =>
                             updateCd(editorTab, (cd) => {
-                              cd.agendas.previstas = parseInt(v) || 0;
+                              const prev = parseInt(v) || 0;
+                              cd.agendas.previstas = prev;
+                              if (cd.agendas.capacidade > 0) {
+                                cd.agendas.percentual = Number(((prev / cd.agendas.capacidade) * 100).toFixed(1));
+                              }
                               return cd;
                             })
                           }
@@ -2686,7 +3101,11 @@ ${cdLines}
                           value={data.cds[editorTab].agendas.capacidade}
                           onChange={(v) =>
                             updateCd(editorTab, (cd) => {
-                              cd.agendas.capacidade = parseInt(v) || 0;
+                              const cap = parseInt(v) || 0;
+                              cd.agendas.capacidade = cap;
+                              if (cap > 0) {
+                                cd.agendas.percentual = Number(((cd.agendas.previstas / cap) * 100).toFixed(1));
+                              }
                               return cd;
                             })
                           }
@@ -2696,19 +3115,24 @@ ${cdLines}
                       {/* Categorias Acima da Capacidade (Agendas) */}
                       <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
                         <div className="flex items-center justify-between mb-2">
-                          <span
-                            className={`text-[11px] font-bold uppercase ${
-                              isDark ? "text-slate-300" : "text-slate-600"
-                            }`}
-                          >
-                            Categorias Acima da Capacidade (&gt; 100%)
-                          </span>
+                          <div>
+                            <span
+                              className={`text-[11px] font-bold uppercase block ${
+                                isDark ? "text-slate-300" : "text-slate-600"
+                              }`}
+                            >
+                              Categorias Agendadas Acima da Capacidade (&gt; 100%)
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              Capacidade serve para o cálculo automático (% = Senhas ÷ Capacidade × 100) e não é exibida na matriz.
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() =>
                               updateCd(editorTab, (cd) => {
                                 const list = [...(cd.agendas.alertaCategorias || [])];
-                                list.push({ nome: "Nova Categoria", percentual: 110.0, senhas: 25 });
+                                list.push({ nome: "Nova Categoria", percentual: 110.0, senhas: 22, capacidade: 20 });
                                 cd.agendas.alertaCategorias = list;
                                 return cd;
                               })
@@ -2718,6 +3142,18 @@ ${cdLines}
                             <Plus className="w-3 h-3" /> Inserir Categoria Agendada
                           </button>
                         </div>
+
+                        {/* Cabeçalho das colunas das categorias */}
+                        {(data.cds[editorTab].agendas.alertaCategorias || []).length > 0 && (
+                          <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            <span className="flex-1">Categoria</span>
+                            <span className="w-20 text-center">Senhas</span>
+                            <span className="w-24 text-center">Capacidade</span>
+                            <span className="w-20 text-center">% Auto</span>
+                            <span className="w-6"></span>
+                          </div>
+                        )}
+
                         <div className="space-y-2">
                           {(data.cds[editorTab].agendas.alertaCategorias || []).map((cat, ci) => (
                             <div key={ci} className="flex items-center gap-2">
@@ -2732,11 +3168,71 @@ ${cdLines}
                                     return cd;
                                   })
                                 }
-                                placeholder="Nome da Categoria (ex: Mercearia, Perecíveis)"
+                                placeholder="Nome da Categoria (ex: Mercearia)"
                                 className={`flex-1 px-2 py-1 text-xs border rounded ${
                                   isDark
                                     ? "bg-slate-800 border-slate-700 text-white"
                                     : "bg-white border-slate-300 text-slate-900"
+                                }`}
+                              />
+                              <input
+                                type="number"
+                                value={cat.senhas ?? 0}
+                                onChange={(e) =>
+                                  updateCd(editorTab, (cd) => {
+                                    const list = [...(cd.agendas.alertaCategorias || [])];
+                                    const senhasVal = parseInt(e.target.value) || 0;
+                                    const capVal = list[ci]?.capacidade || 0;
+                                    const autoPct =
+                                      capVal > 0
+                                        ? Number(((senhasVal / capVal) * 100).toFixed(1))
+                                        : list[ci]?.percentual || 0;
+                                    if (list[ci])
+                                      list[ci] = {
+                                        ...list[ci],
+                                        senhas: senhasVal,
+                                        percentual: autoPct,
+                                      };
+                                    cd.agendas.alertaCategorias = list;
+                                    return cd;
+                                  })
+                                }
+                                placeholder="Senhas"
+                                title="Quantidade de Senhas / Agendas"
+                                className={`w-20 px-2 py-1 text-xs font-mono border rounded ${
+                                  isDark
+                                    ? "bg-slate-800 border-slate-700 text-white"
+                                    : "bg-white border-slate-300 text-slate-900"
+                                }`}
+                              />
+                              <input
+                                type="number"
+                                value={cat.capacidade ?? ""}
+                                onChange={(e) =>
+                                  updateCd(editorTab, (cd) => {
+                                    const list = [...(cd.agendas.alertaCategorias || [])];
+                                    const capVal = parseInt(e.target.value) || 0;
+                                    const senhasVal = list[ci]?.senhas || 0;
+                                    const autoPct =
+                                      capVal > 0
+                                        ? Number(((senhasVal / capVal) * 100).toFixed(1))
+                                        : list[ci]?.percentual || 0;
+                                    if (list[ci])
+                                      list[ci] = {
+                                        ...list[ci],
+                                        capacidade: capVal,
+                                        percentual: autoPct,
+                                      };
+                                    cd.agendas.alertaCategorias = list;
+                                    return cd;
+                                  })
+                                }
+                                placeholder="Capacidade"
+                                title="Capacidade da categoria (apenas para cálculo automático do %)"
+                                className={`w-24 px-2 py-1 text-xs font-mono border rounded border-blue-400/40 ${
+                                  isDark
+                                    ? "bg-slate-800/80 border-blue-500/40 text-blue-300"
+                                    : "bg-blue-50/50 border-blue-300 text-blue-900"
                                 }`}
                               />
                               <div className="flex items-center gap-1">
@@ -2747,38 +3243,33 @@ ${cdLines}
                                   onChange={(e) =>
                                     updateCd(editorTab, (cd) => {
                                       const list = [...(cd.agendas.alertaCategorias || [])];
-                                      if (list[ci]) list[ci] = { ...list[ci], percentual: parseFloat(e.target.value) || 0 };
+                                      if (list[ci])
+                                        list[ci] = {
+                                          ...list[ci],
+                                          percentual: parseFloat(e.target.value) || 0,
+                                        };
                                       cd.agendas.alertaCategorias = list;
                                       return cd;
                                     })
                                   }
                                   placeholder="%"
-                                  className={`w-20 px-2 py-1 text-xs font-mono border rounded ${
-                                    isDark
+                                  title="Percentual de ocupação da categoria (calculado automaticamente)"
+                                  className={`w-20 px-2 py-1 text-xs font-mono font-bold border rounded ${
+                                    cat.percentual > 100
+                                      ? "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800"
+                                      : isDark
                                       ? "bg-slate-800 border-slate-700 text-white"
                                       : "bg-white border-slate-300 text-slate-900"
                                   }`}
                                 />
-                                <span className={`text-[10px] font-bold ${isDark ? "text-slate-400" : "text-slate-500"}`}>%</span>
+                                <span
+                                  className={`text-[10px] font-bold ${
+                                    isDark ? "text-slate-400" : "text-slate-500"
+                                  }`}
+                                >
+                                  %
+                                </span>
                               </div>
-                              <input
-                                type="number"
-                                value={cat.senhas ?? 0}
-                                onChange={(e) =>
-                                  updateCd(editorTab, (cd) => {
-                                    const list = [...(cd.agendas.alertaCategorias || [])];
-                                    if (list[ci]) list[ci] = { ...list[ci], senhas: parseInt(e.target.value) || 0 };
-                                    cd.agendas.alertaCategorias = list;
-                                    return cd;
-                                  })
-                                }
-                                placeholder="Senhas"
-                                className={`w-20 px-2 py-1 text-xs font-mono border rounded ${
-                                  isDark
-                                    ? "bg-slate-800 border-slate-700 text-white"
-                                    : "bg-white border-slate-300 text-slate-900"
-                                }`}
-                              />
                               <button
                                 type="button"
                                 onClick={() =>
@@ -2950,7 +3441,7 @@ ${cdLines}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <Field
                           isDark={isDark}
-                          label="% Previsto 14h / Capacidade"
+                          label="% Previsto 14h / Capacidade (Automático)"
                           type="number"
                           step="0.01"
                           value={data.cds[editorTab].backlogFaturamento.percentual}
@@ -2969,7 +3460,13 @@ ${cdLines}
                           value={data.cds[editorTab].backlogFaturamento.capacidade}
                           onChange={(v) =>
                             updateCd(editorTab, (cd) => {
-                              cd.backlogFaturamento.capacidade = parseInt(v) || 0;
+                              const cap = parseInt(v) || 0;
+                              cd.backlogFaturamento.capacidade = cap;
+                              if (cap > 0) {
+                                cd.backlogFaturamento.percentual = Number(
+                                  ((cd.backlogFaturamento.backlogPrevisto14h / cap) * 100).toFixed(1)
+                                );
+                              }
                               return cd;
                             })
                           }
@@ -2981,7 +3478,13 @@ ${cdLines}
                           value={data.cds[editorTab].backlogFaturamento.backlogPrevisto14h}
                           onChange={(v) =>
                             updateCd(editorTab, (cd) => {
-                              cd.backlogFaturamento.backlogPrevisto14h = parseInt(v) || 0;
+                              const prev = parseInt(v) || 0;
+                              cd.backlogFaturamento.backlogPrevisto14h = prev;
+                              if (cd.backlogFaturamento.capacidade > 0) {
+                                cd.backlogFaturamento.percentual = Number(
+                                  ((prev / cd.backlogFaturamento.capacidade) * 100).toFixed(1)
+                                );
+                              }
                               return cd;
                             })
                           }

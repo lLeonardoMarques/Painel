@@ -92,6 +92,9 @@ export interface CategoriaAlerta {
   percentual: number;
   livres?: number;
   senhas?: number;
+  capacidade?: number;
+  /** agendas: categoria com capacidade 0 e senhas agendadas */
+  semCapacidade?: boolean;
 }
 
 export interface FornecedorBacklog {
@@ -123,6 +126,8 @@ export interface StatusCdGerencial {
     previstas: number;
     capacidade: number;
     alertaCategorias: CategoriaAlerta[];
+    /** categorias acima da capacidade além das mostradas (a API manda só as 3 maiores) */
+    outrasAcima?: number;
   };
   backlogRecebimento: {
     senhasAtraso: number;
