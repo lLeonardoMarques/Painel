@@ -599,6 +599,8 @@ export default function PainelGerencial({
   const [apiStatusSource, setApiStatusSource] = useState<"LIVE" | "CACHE">("LIVE");
   // Agendas de recebimento do dia, por CD (vindas do banco; sem elas, vale a base de exemplo)
   const [agendasDia, setAgendasDia] = useState<Record<number, AgendaCdApi>>({});
+  // true quando a API de agendas respondeu (mesmo sem dados): aí não usamos mais a base de exemplo
+  const [agendasCarregadas, setAgendasCarregadas] = useState(false);
   const [agendasAtualizadoEm, setAgendasAtualizadoEm] = useState<string | null>(null);
 
   // Estado do Modal de Edição Manual
@@ -667,6 +669,9 @@ export default function PainelGerencial({
             percentual: c.semCapacidade ? Number.POSITIVE_INFINITY : c.percentual ?? 0,
           })),
         };
+      } else if (agendasCarregadas) {
+        // sem agenda importada para o dia: nada de número de exemplo
+        merged.agendas = { percentual: 0, previstas: 0, capacidade: 0, alertaCategorias: [], semDados: true };
       }
 
       // Garantia de cálculo automático de % Agenda: Prevista (hoje) ÷ Capacidade × 100
@@ -711,7 +716,7 @@ export default function PainelGerencial({
       ...(globalOverrides.dataReferencia ? { dataReferencia: globalOverrides.dataReferencia } : {}),
       cds: mergedCds,
     };
-  }, [apiRawItems, isRegionais, customOverrides, globalOverrides, manualStatusOverrides, agendasDia]);
+  }, [apiRawItems, isRegionais, customOverrides, globalOverrides, manualStatusOverrides, agendasDia, agendasCarregadas]);
 
   const updateCd = (cdIndex: number, updater: (cd: StatusCdGerencial) => StatusCdGerencial) => {
     const targetCd = data.cds[cdIndex];
@@ -850,6 +855,7 @@ export default function PainelGerencial({
       const porCd: Record<number, AgendaCdApi> = {};
       for (const c of json.cds || []) porCd[Number(c.cd)] = c;
       setAgendasDia(porCd);
+      setAgendasCarregadas(true);
       setAgendasAtualizadoEm(json.atualizadoEm || null);
     } catch (err) {
       console.warn("Agendas do dia indisponíveis:", err);
@@ -958,9 +964,7 @@ export default function PainelGerencial({
 • Ocupação: ${formatPercent(cd.ocupacao.percentual)}% (${cd.ocupacao.ocupada.toLocaleString(
           "pt-BR"
         )}/${cd.ocupacao.total.toLocaleString("pt-BR")} pos.)
-• Agendas: ${formatPercent(cd.agendas.percentual)}% (${cd.agendas.previstas} prev. / ${
-          cd.agendas.capacidade
-        } cap.)
+• Agendas: ${cd.agendas.semDados ? "sem agenda importada para hoje" : `${formatPercent(cd.agendas.percentual)}% (${cd.agendas.previstas} prev. / ${cd.agendas.capacidade} cap.)`}
 • Backlog Recebimento: ${cd.backlogRecebimento.senhasAtraso} senhas (${
           cd.backlogRecebimento.diffDiaAnterior > 0
             ? `+${cd.backlogRecebimento.diffDiaAnterior}`
@@ -2211,6 +2215,19 @@ ${cdLines}
               )}
             </div>
             {data.cds.map((cd) => {
+              if (cd.agendas.semDados) {
+                return (
+                  <div key={`agend-${cd.cd}`} className="cell">
+                    <div className="gauge-top">
+                      <span className="pct">—</span>
+                      <span className="label">agend. / capac. dia</span>
+                    </div>
+                    <div className="alert-box neutral">
+                      <div className="alert-title">Sem agenda importada para hoje</div>
+                    </div>
+                  </div>
+                );
+              }
               const pct = cd.agendas.capacidade > 0 && cd.agendas.previstas !== undefined
                 ? Number(((cd.agendas.previstas / cd.agendas.capacidade) * 100).toFixed(2))
                 : cd.agendas.percentual;

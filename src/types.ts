@@ -128,6 +128,8 @@ export interface StatusCdGerencial {
     alertaCategorias: CategoriaAlerta[];
     /** categorias acima da capacidade além das mostradas (a API manda só as 3 maiores) */
     outrasAcima?: number;
+    /** a API de agendas respondeu, mas não há agenda importada para o dia deste CD */
+    semDados?: boolean;
   };
   backlogRecebimento: {
     senhasAtraso: number;
