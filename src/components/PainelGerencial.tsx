@@ -24,6 +24,7 @@ import {
   Save,
   RotateCcw,
   Sliders,
+  Lock,
 } from "lucide-react";
 import { PAINEL_GERENCIAL_INITIAL_DATA } from "../data/painelGerencialMock";
 import { PAINEL_REGIONAIS_INITIAL_DATA } from "../data/painelRegionaisMock";
@@ -645,6 +646,7 @@ export default function PainelGerencial({
         ...cd,
         ...(override || {}),
         ocupacao: cd.ocupacao, // 1º Quadrante 100% fiel à API externa (http://10.210.1.242:8090/api/resumo)
+        agendas: cd.agendas, // Agendas travadas: vêm do arquivo de agendamento (robô), sem edição manual
         statusGeral: (manualStatus || override?.statusGeral || cd.statusGeral) as "NORMAL" | "ATENÇÃO" | "CRÍTICO",
       };
 
@@ -3050,247 +3052,74 @@ ${cdLines}
                       </div>
                     </section>
 
-                    {/* Agendas */}
+                    {/* Agendas: somente leitura (vêm do arquivo de agendamento gravado pelo robô) */}
                     <section
                       className={`border rounded-xl p-4 transition-colors ${
                         isDark ? "border-slate-800 bg-slate-800/40" : "border-slate-200 bg-slate-50/50"
                       }`}
                     >
-                      <h4
-                        className={`text-xs font-black uppercase tracking-wide mb-3 ${
-                          isDark ? "text-slate-200" : "text-slate-700"
-                        }`}
-                      >
-                        📅 Agendas Recebimento CD
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <Field
-                          isDark={isDark}
-                          label="% Agendas (Auto: Previstas ÷ Capacidade)"
-                          type="number"
-                          step="0.01"
-                          value={data.cds[editorTab].agendas.percentual}
-                          suffix="%"
-                          onChange={(v) =>
-                            updateCd(editorTab, (cd) => {
-                              cd.agendas.percentual = parseFloat(v) || 0;
-                              return cd;
-                            })
-                          }
-                        />
-                        <Field
-                          isDark={isDark}
-                          label="Previstas (Hoje)"
-                          type="number"
-                          value={data.cds[editorTab].agendas.previstas}
-                          onChange={(v) =>
-                            updateCd(editorTab, (cd) => {
-                              const prev = parseInt(v) || 0;
-                              cd.agendas.previstas = prev;
-                              if (cd.agendas.capacidade > 0) {
-                                cd.agendas.percentual = Number(((prev / cd.agendas.capacidade) * 100).toFixed(1));
-                              }
-                              return cd;
-                            })
-                          }
-                        />
-                        <Field
-                          isDark={isDark}
-                          label="Capacidade do Dia"
-                          type="number"
-                          value={data.cds[editorTab].agendas.capacidade}
-                          onChange={(v) =>
-                            updateCd(editorTab, (cd) => {
-                              const cap = parseInt(v) || 0;
-                              cd.agendas.capacidade = cap;
-                              if (cap > 0) {
-                                cd.agendas.percentual = Number(((cd.agendas.previstas / cap) * 100).toFixed(1));
-                              }
-                              return cd;
-                            })
-                          }
-                        />
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <h4
+                          className={`text-xs font-black uppercase tracking-wide ${
+                            isDark ? "text-slate-200" : "text-slate-700"
+                          }`}
+                        >
+                          📅 Agendas Recebimento CD
+                        </h4>
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-slate-500/10 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400"
+                          title="Os valores de agendas vêm do arquivo de agendamento importado no banco e não podem ser editados aqui"
+                        >
+                          <Lock className="w-3 h-3" /> Somente leitura · arquivo de agendamento
+                        </span>
                       </div>
-
-                      {/* Categorias Acima da Capacidade (Agendas) */}
-                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span
-                              className={`text-[11px] font-bold uppercase block ${
-                                isDark ? "text-slate-300" : "text-slate-600"
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {[
+                          {
+                            label: "% Agendas (Previstas ÷ Capacidade)",
+                            valor: data.cds[editorTab].agendas.capacidade > 0
+                              ? `${formatPercent(Number(((data.cds[editorTab].agendas.previstas / data.cds[editorTab].agendas.capacidade) * 100).toFixed(2)))}%`
+                              : `${formatPercent(data.cds[editorTab].agendas.percentual)}%`,
+                          },
+                          { label: "Previstas (Hoje)", valor: data.cds[editorTab].agendas.previstas.toLocaleString("pt-BR") },
+                          { label: "Capacidade do Dia", valor: data.cds[editorTab].agendas.capacidade.toLocaleString("pt-BR") },
+                        ].map((item) => (
+                          <div key={item.label}>
+                            <span className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                              {item.label}
+                            </span>
+                            <div
+                              className={`px-2 py-1 text-xs font-mono border rounded ${
+                                isDark ? "bg-slate-900/60 border-slate-700 text-slate-300" : "bg-slate-100 border-slate-200 text-slate-600"
                               }`}
                             >
-                              Categorias Agendadas Acima da Capacidade (&gt; 100%)
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              Capacidade serve para o cálculo automático (% = Senhas ÷ Capacidade × 100) e não é exibida na matriz.
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateCd(editorTab, (cd) => {
-                                const list = [...(cd.agendas.alertaCategorias || [])];
-                                list.push({ nome: "Nova Categoria", percentual: 110.0, senhas: 22, capacidade: 20 });
-                                cd.agendas.alertaCategorias = list;
-                                return cd;
-                              })
-                            }
-                            className="text-xs px-2.5 py-1 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <Plus className="w-3 h-3" /> Inserir Categoria Agendada
-                          </button>
-                        </div>
-
-                        {/* Cabeçalho das colunas das categorias */}
-                        {(data.cds[editorTab].agendas.alertaCategorias || []).length > 0 && (
-                          <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            <span className="flex-1">Categoria</span>
-                            <span className="w-20 text-center">Senhas</span>
-                            <span className="w-24 text-center">Capacidade</span>
-                            <span className="w-20 text-center">% Auto</span>
-                            <span className="w-6"></span>
-                          </div>
-                        )}
-
-                        <div className="space-y-2">
-                          {(data.cds[editorTab].agendas.alertaCategorias || []).map((cat, ci) => (
-                            <div key={ci} className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={cat.nome}
-                                onChange={(e) =>
-                                  updateCd(editorTab, (cd) => {
-                                    const list = [...(cd.agendas.alertaCategorias || [])];
-                                    if (list[ci]) list[ci] = { ...list[ci], nome: e.target.value };
-                                    cd.agendas.alertaCategorias = list;
-                                    return cd;
-                                  })
-                                }
-                                placeholder="Nome da Categoria (ex: Mercearia)"
-                                className={`flex-1 px-2 py-1 text-xs border rounded ${
-                                  isDark
-                                    ? "bg-slate-800 border-slate-700 text-white"
-                                    : "bg-white border-slate-300 text-slate-900"
-                                }`}
-                              />
-                              <input
-                                type="number"
-                                value={cat.senhas ?? 0}
-                                onChange={(e) =>
-                                  updateCd(editorTab, (cd) => {
-                                    const list = [...(cd.agendas.alertaCategorias || [])];
-                                    const senhasVal = parseInt(e.target.value) || 0;
-                                    const capVal = list[ci]?.capacidade || 0;
-                                    const autoPct =
-                                      capVal > 0
-                                        ? Number(((senhasVal / capVal) * 100).toFixed(1))
-                                        : list[ci]?.percentual || 0;
-                                    if (list[ci])
-                                      list[ci] = {
-                                        ...list[ci],
-                                        senhas: senhasVal,
-                                        percentual: autoPct,
-                                      };
-                                    cd.agendas.alertaCategorias = list;
-                                    return cd;
-                                  })
-                                }
-                                placeholder="Senhas"
-                                title="Quantidade de Senhas / Agendas"
-                                className={`w-20 px-2 py-1 text-xs font-mono border rounded ${
-                                  isDark
-                                    ? "bg-slate-800 border-slate-700 text-white"
-                                    : "bg-white border-slate-300 text-slate-900"
-                                }`}
-                              />
-                              <input
-                                type="number"
-                                value={cat.capacidade ?? ""}
-                                onChange={(e) =>
-                                  updateCd(editorTab, (cd) => {
-                                    const list = [...(cd.agendas.alertaCategorias || [])];
-                                    const capVal = parseInt(e.target.value) || 0;
-                                    const senhasVal = list[ci]?.senhas || 0;
-                                    const autoPct =
-                                      capVal > 0
-                                        ? Number(((senhasVal / capVal) * 100).toFixed(1))
-                                        : list[ci]?.percentual || 0;
-                                    if (list[ci])
-                                      list[ci] = {
-                                        ...list[ci],
-                                        capacidade: capVal,
-                                        percentual: autoPct,
-                                      };
-                                    cd.agendas.alertaCategorias = list;
-                                    return cd;
-                                  })
-                                }
-                                placeholder="Capacidade"
-                                title="Capacidade da categoria (apenas para cálculo automático do %)"
-                                className={`w-24 px-2 py-1 text-xs font-mono border rounded border-blue-400/40 ${
-                                  isDark
-                                    ? "bg-slate-800/80 border-blue-500/40 text-blue-300"
-                                    : "bg-blue-50/50 border-blue-300 text-blue-900"
-                                }`}
-                              />
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={cat.percentual}
-                                  onChange={(e) =>
-                                    updateCd(editorTab, (cd) => {
-                                      const list = [...(cd.agendas.alertaCategorias || [])];
-                                      if (list[ci])
-                                        list[ci] = {
-                                          ...list[ci],
-                                          percentual: parseFloat(e.target.value) || 0,
-                                        };
-                                      cd.agendas.alertaCategorias = list;
-                                      return cd;
-                                    })
-                                  }
-                                  placeholder="%"
-                                  title="Percentual de ocupação da categoria (calculado automaticamente)"
-                                  className={`w-20 px-2 py-1 text-xs font-mono font-bold border rounded ${
-                                    cat.percentual > 100
-                                      ? "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800"
-                                      : isDark
-                                      ? "bg-slate-800 border-slate-700 text-white"
-                                      : "bg-white border-slate-300 text-slate-900"
-                                  }`}
-                                />
-                                <span
-                                  className={`text-[10px] font-bold ${
-                                    isDark ? "text-slate-400" : "text-slate-500"
-                                  }`}
-                                >
-                                  %
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateCd(editorTab, (cd) => {
-                                    const list = [...(cd.agendas.alertaCategorias || [])];
-                                    list.splice(ci, 1);
-                                    cd.agendas.alertaCategorias = list;
-                                    return cd;
-                                  })
-                                }
-                                className="p-1 text-rose-500 hover:bg-rose-500/10 rounded cursor-pointer"
-                                title="Remover categoria"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {item.valor}
                             </div>
-                          ))}
-                          {(!data.cds[editorTab].agendas.alertaCategorias || data.cds[editorTab].agendas.alertaCategorias.length === 0) && (
-                            <p className="text-[11px] text-slate-400 italic">Nenhuma categoria acima da capacidade adicionada.</p>
-                          )}
-                        </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <span className={`text-[11px] font-bold uppercase block mb-2 ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                          Categorias acima da capacidade (as 3 maiores)
+                        </span>
+                        {(data.cds[editorTab].agendas.alertaCategorias || []).length > 0 ? (
+                          <ul className="space-y-1">
+                            {(data.cds[editorTab].agendas.alertaCategorias || []).slice(0, 3).map((cat, ci) => (
+                              <li key={ci} className="flex items-center justify-between gap-2 text-xs">
+                                <span className={isDark ? "text-slate-300" : "text-slate-700"}>{cat.nome}</span>
+                                <span className="font-mono text-rose-600 dark:text-rose-400">
+                                  {cat.semCapacidade
+                                    ? "sem capacidade"
+                                    : `${formatPercent(cat.capacidade && cat.senhas !== undefined ? Number(((cat.senhas / cat.capacidade) * 100).toFixed(2)) : cat.percentual)}%`}
+                                  {cat.senhas !== undefined ? ` (${cat.senhas} ${cat.senhas === 1 ? "senha" : "senhas"})` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic">Nenhuma categoria acima da capacidade.</p>
+                        )}
                       </div>
                     </section>
 
