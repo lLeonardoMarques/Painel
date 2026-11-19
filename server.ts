@@ -55,7 +55,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Lê o corpo JSON só nas rotas atendidas aqui. Aplicado a tudo, ele consumia o corpo das requisições que vão
+  // pelo proxy do Vite para o backend, que recebia POST/PUT vazios ("I/O error while reading input message").
+  const lerJson = express.json();
 
   // Manhattan Capacidades: planilha da pasta Agendamento (mais recente)
   app.get("/api/manhattan/planilha", rotaPlanilhaManhattan);
@@ -92,7 +94,7 @@ async function startServer() {
   });
 
   // API Route: Update Capacity
-  app.put("/api/capacidades/:id", async (req, res) => {
+  app.put("/api/capacidades/:id", lerJson, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { capacidadeInbound, capacidadeOutboundFracionado, capacidadeOutboundFechado } = req.body;
 
@@ -128,7 +130,7 @@ async function startServer() {
   });
 
   // API Route: Bulk update by year, month, cd, category (Monthly Outbound)
-  app.put("/api/capacidades", async (req, res) => {
+  app.put("/api/capacidades", lerJson, async (req, res) => {
     const { ano, mes, cd, categoria, capacidadefracionada, capacidadefechada, capacidadeFracionada, capacidadeFechada } = req.body;
 
     const valFrac = capacidadefracionada !== undefined ? capacidadefracionada : capacidadeFracionada;
@@ -177,7 +179,7 @@ async function startServer() {
   });
 
   // API Route: Bulk POST update fallback
-  app.post("/api/capacidades", async (req, res) => {
+  app.post("/api/capacidades", lerJson, async (req, res) => {
     if (req.body && req.body.ano !== undefined) {
       const { ano, mes, cd, categoria, capacidadefracionada, capacidadefechada, capacidadeFracionada, capacidadeFechada } = req.body;
       const valFrac = capacidadefracionada !== undefined ? capacidadefracionada : capacidadeFracionada;
