@@ -13,6 +13,13 @@ const planilhaManhattan = (): Plugin => ({
   },
 });
 
+// Backend gestao-ppcp: a chamada do proxy é de servidor para servidor, então não leva a origem do navegador.
+// Com ela, o backend recusa (403 "Invalid CORS request") toda gravação feita a partir de um endereço que não
+// esteja em app.cors.origens (ex.: o painel aberto em http://10.210.1.242:3000).
+const semOrigemDoNavegador = (proxy: any) => {
+  proxy.on('proxyReq', (proxyReq: any) => proxyReq.removeHeader('origin'));
+};
+
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss(), planilhaManhattan()],
@@ -65,6 +72,7 @@ export default defineConfig(() => {
           secure: false,
           ws: true,
           configure: (proxy, _options) => {
+            semOrigemDoNavegador(proxy);
             proxy.on('proxyRes', (proxyRes, _req, _res) => {
               proxyRes.headers['Access-Control-Allow-Origin'] = '*';
             });
@@ -82,6 +90,7 @@ export default defineConfig(() => {
           target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
+          configure: semOrigemDoNavegador,
         },
 
         // 🔥 APIs específicas (do config 1)
@@ -94,16 +103,19 @@ export default defineConfig(() => {
           target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
+          configure: semOrigemDoNavegador,
         },
         '/api/capacidades': {
           target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
+          configure: semOrigemDoNavegador,
         },
         '/api/dashboard': {
           target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
+          configure: semOrigemDoNavegador,
         },
 
         // 🔥 API GENÉRICA - POR ÚLTIMO (fallback)
@@ -111,6 +123,7 @@ export default defineConfig(() => {
           target: 'http://10.210.1.242:8080',
           changeOrigin: true,
           secure: false,
+          configure: semOrigemDoNavegador,
         },
       },
     },
