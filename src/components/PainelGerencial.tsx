@@ -532,7 +532,10 @@ export default function PainelGerencial({
   theme = "light",
   showNotification,
   variant = "sp",
+  user,
 }: PainelGerencialProps) {
+  // só o ADM edita valores do painel; os demais perfis só visualizam
+  const podeEditar = user?.role === "admin";
   // Controle interno de visualização: Matriz (SP) ou Regionais (Fora de SP)
   const [activeView, setActiveView] = useState<"sp" | "regionais">(() => {
     try {
@@ -641,8 +644,11 @@ export default function PainelGerencial({
     const base = transformApiToPainelData(apiRawItems, isRegionais);
     const mergedCds = base.cds.map((cd) => {
       const cdNum = Number(cd.cd);
-      const override = customOverrides[cdNum] || customOverrides[cd.cd];
-      const manualStatus = manualStatusOverrides[cdNum] ?? manualStatusOverrides[String(cd.cd) as any] ?? override?.statusGeral;
+      // edições manuais (salvas no navegador) só valem para o ADM
+      const override = podeEditar ? customOverrides[cdNum] || customOverrides[cd.cd] : undefined;
+      const manualStatus = podeEditar
+        ? manualStatusOverrides[cdNum] ?? manualStatusOverrides[String(cd.cd) as any] ?? override?.statusGeral
+        : undefined;
 
       const merged: StatusCdGerencial = {
         ...cd,
@@ -716,7 +722,7 @@ export default function PainelGerencial({
       ...(globalOverrides.dataReferencia ? { dataReferencia: globalOverrides.dataReferencia } : {}),
       cds: mergedCds,
     };
-  }, [apiRawItems, isRegionais, customOverrides, globalOverrides, manualStatusOverrides, agendasDia, agendasCarregadas]);
+  }, [apiRawItems, isRegionais, customOverrides, globalOverrides, manualStatusOverrides, agendasDia, agendasCarregadas, podeEditar]);
 
   const updateCd = (cdIndex: number, updater: (cd: StatusCdGerencial) => StatusCdGerencial) => {
     const targetCd = data.cds[cdIndex];
@@ -1797,7 +1803,8 @@ ${cdLines}
                 )}
               </button>
 
-              {/* BOTÃO EDITAR DADOS */}
+              {/* BOTÃO EDITAR DADOS (só ADM) */}
+              {podeEditar && (
               <button
                 type="button"
                 onClick={() => setShowEditorModal(true)}
@@ -1807,6 +1814,7 @@ ${cdLines}
                 <Pencil className="w-3.5 h-3.5 text-white" />
                 <span>Editar Dados</span>
               </button>
+              )}
 
               {/* SELETOR SP OU REGIONAIS (AO LADO DE ATUALIZAR) */}
               <div 
@@ -1880,6 +1888,7 @@ ${cdLines}
               <span>Regionais</span>
             </button>
           </div>
+          {podeEditar && (
           <button
             type="button"
             onClick={() => setShowEditorModal(true)}
@@ -1889,6 +1898,7 @@ ${cdLines}
             <Pencil className="w-3 h-3 text-white" />
             <span>Editar Dados</span>
           </button>
+          )}
           <button
             onClick={toggleToolbar}
             title="Exibir barra superior completa"
@@ -1955,7 +1965,7 @@ ${cdLines}
                 >
                   <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
                     <h3 className="truncate" title={cd.nome}>{cd.nome}</h3>
-                    <button
+                    {podeEditar && <button
                       type="button"
                       onClick={() => {
                         setEditorTab(cdIdx);
@@ -1965,7 +1975,7 @@ ${cdLines}
                       className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-75 hover:opacity-100 cursor-pointer hide-on-capture"
                     >
                       <Pencil className="w-2.5 h-2.5" />
-                    </button>
+                    </button>}
                   </div>
 
                   <div className="relative flex items-center shrink-0">
@@ -2607,7 +2617,7 @@ ${cdLines}
           MODAL DO EDITOR MANUAL DOS CDS (STATUS OPERAÇÃO)
           ======================================================== */}
       <AnimatePresence>
-        {showEditorModal && (
+        {showEditorModal && podeEditar && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/75 backdrop-blur-sm hide-on-capture">
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 12 }}

@@ -16,6 +16,7 @@ const ManhattanCapacidades = lazy(() => import("./components/ManhattanCapacidade
 const ProjecaoOcupacaoCD = lazy(() => import("./components/ProjecaoOcupacaoCD"));
 const PainelPFA = lazy(() => import("./components/pfa/PainelPFA"));
 const Parametros = lazy(() => import("./components/Parametros"));
+const RecebimentoRemunerado = lazy(() => import("./components/RecebimentoRemunerado"));
 
 function CarregandoTela() {
   return (
@@ -499,6 +500,7 @@ export default function App() {
             theme={theme}
             showNotification={showNotification}
             onPageChange={setCurrentPage}
+            podeEditar={user?.role === "admin"}
           />
         )}
 
@@ -507,6 +509,17 @@ export default function App() {
             {/* página "pfa/<modo>/<processo>", escolhida no menu PFA */}
             <PainelPFA theme={theme} modo={currentPage.split("/")[1]} aba={currentPage.split("/")[2]} />
           </div>
+        )}
+
+        {currentPage.startsWith("remunerado/") && (
+          <RecebimentoRemunerado
+            key={currentPage}
+            modo={(currentPage.split("/")[1] || "pendencias") as "pendencias" | "nova" | "todas"}
+            user={user}
+            theme={theme}
+            showNotification={showNotification}
+            onPageChange={setCurrentPage}
+          />
         )}
 
         {currentPage === "parametros" && user?.role === "admin" && (

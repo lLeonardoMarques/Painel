@@ -40,25 +40,32 @@ interface RegistrationUser {
 // ============================================
 // 🔥 FUNÇÃO AUXILIAR PARA NORMALIZAR ROLE - CORRIGIDA
 // ============================================
-const normalizeRole = (role: string | undefined): "ADMIN" | "PPCP" | "GA" => {
-  if (!role) return "GA";
+/** Perfis do backend (UserRole). ADMIN vê e edita; os demais só visualizam. */
+type Perfil = "ADMIN" | "PPCP" | "GA" | "OPERACOES" | "ORCAMENTO";
+const PERFIS: { valor: Perfil; nome: string }[] = [
+  { valor: "ADMIN", nome: "Administrador" },
+  { valor: "GA", nome: "Gestão de Abastecimento" },
+  { valor: "OPERACOES", nome: "Operações" },
+  { valor: "PPCP", nome: "PPCP" },
+  { valor: "ORCAMENTO", nome: "Gestão Orçamentária" },
+];
+const nomePerfil = (p: Perfil) => PERFIS.find((x) => x.valor === p)?.nome || p;
+
+const normalizeRole = (role: string | undefined): Perfil => {
+  if (!role) return "PPCP";
   const r = String(role).toUpperCase();
   if (r === "ADM" || r === "ADMIN" || r === "ADMINISTRADOR") return "ADMIN";
   if (r === "PPCP" || r === "PLANEJAMENTO") return "PPCP";
-  return "GA";
+  if (r === "GA" || r.includes("ABASTECIMENTO")) return "GA";
+  if (r.includes("OPERAC")) return "OPERACOES";
+  if (r.includes("ORCAMENT")) return "ORCAMENTO";
+  return "PPCP";
 };
 
 // ============================================
 // 🔥 FUNÇÃO PARA CONVERTER ROLE PARA BANCO - CORRIGIDA
 // ============================================
-const roleToDatabase = (role: "ADMIN" | "PPCP" | "GA"): string => {
-  switch(role) {
-    case "ADMIN": return "ADMIN";
-    case "PPCP": return "PPCP";
-    case "GA": return "GA";
-    default: return "GA";
-  }
-};
+const roleToDatabase = (role: Perfil): string => role;
 
 // ============================================
 // 🔥 FUNÇÃO PARA VERIFICAR SE É ADMIN
@@ -81,7 +88,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
   const [searchTerm, setSearchTerm] = useState("");
   
   // Track selected roles for users in dropdowns
-  const [selectedRoles, setSelectedRoles] = useState<Record<number, "ADMIN" | "PPCP" | "GA">>({});
+  const [selectedRoles, setSelectedRoles] = useState<Record<number, Perfil>>({});
 
   // Fallback Demo Mode state for local preview environments
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
@@ -123,7 +130,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
     setApprovedUsers(approvedList);
 
     // Initialize roles state
-    const rolesMap: Record<number, "ADMIN" | "PPCP" | "GA"> = {};
+    const rolesMap: Record<number, Perfil> = {};
     [...pendingList, ...approvedList].forEach((u) => {
       rolesMap[u.id] = normalizeRole(u.role);
     });
@@ -242,7 +249,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
         console.log(`📊 Encontrados ${pending.length} pendentes`);
         setPendingUsers(pending);
         
-        const rolesMap: Record<number, "ADMIN" | "PPCP" | "GA"> = {};
+        const rolesMap: Record<number, Perfil> = {};
         pending.forEach((item: RegistrationUser) => {
           rolesMap[item.id] = normalizeRole(item.role);
         });
@@ -298,7 +305,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
       if (Array.isArray(data)) {
         setApprovedUsers(data);
         
-        const rolesMap: Record<number, "ADMIN" | "PPCP" | "GA"> = {};
+        const rolesMap: Record<number, Perfil> = {};
         data.forEach((item: RegistrationUser) => {
           rolesMap[item.id] = normalizeRole(item.role);
         });
@@ -330,7 +337,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
   // ============================================
   // UPDATE USER STATUS/ROLE - PUT /registro/{id} - CORRIGIDO
   // ============================================
-  const handleUpdateUser = useCallback(async (id: number, status: "APROVADO" | "RECUSADO" | "PENDENTE", customRole?: "ADMIN" | "PPCP" | "GA") => {
+  const handleUpdateUser = useCallback(async (id: number, status: "APROVADO" | "RECUSADO" | "PENDENTE", customRole?: Perfil) => {
     if (!user?.token) {
       setError("Usuário não autenticado.");
       return;
@@ -341,7 +348,7 @@ export default function UserControlPage({ user, theme, onBack }: UserControlPage
     setSuccessMsg(null);
 
     // 🔥 CORREÇÃO: Usar a role selecionada ou a padrão
-    const role = customRole || selectedRoles[id] || "GA";
+    const role = customRole || selectedRoles[id] || "PPCP";
     
     // 🔥 CORREÇÃO: Converter para o formato do banco
     const roleForDatabase = roleToDatabase(role);
@@ -813,6 +820,10 @@ Média Recebido = Somatório(Recebido [em Dias Úteis]) / Quantidade_Dias_Úteis
       ? "bg-violet-500/10 text-violet-700 dark:text-violet-300"
       : role === "PPCP"
       ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+      : role === "ORCAMENTO"
+      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : role === "OPERACOES"
+      ? "bg-slate-500/10 text-slate-700 dark:text-slate-300"
       : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
 
   return (
@@ -966,7 +977,7 @@ Média Recebido = Somatório(Recebido [em Dias Úteis]) / Quantidade_Dias_Úteis
                       <td className={ui.td}>
                         {activeTab === "users" ? (
                           <span className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold ${roleChip(normalizeRole(reg.role))}`}>
-                            {normalizeRole(reg.role)}
+                            {nomePerfil(normalizeRole(reg.role))}
                           </span>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>
@@ -974,16 +985,16 @@ Média Recebido = Somatório(Recebido [em Dias Úteis]) / Quantidade_Dias_Úteis
                       </td>
                       <td className={ui.td}>
                         <select
-                          value={selectedRoles[reg.id] || "GA"}
+                          value={selectedRoles[reg.id] || "PPCP"}
                           onChange={(e) => setSelectedRoles(prev => ({
                             ...prev,
-                            [reg.id]: e.target.value as "ADMIN" | "PPCP" | "GA"
+                            [reg.id]: e.target.value as Perfil
                           }))}
                           className="rounded-lg bg-slate-500/10 hover:bg-slate-500/15 px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-100 border-0 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer transition-colors"
                         >
-                          <option value="ADMIN" className={theme === "dark" ? "bg-slate-900" : ""}>Administrador</option>
-                          <option value="PPCP" className={theme === "dark" ? "bg-slate-900" : ""}>PPCP</option>
-                          <option value="GA" className={theme === "dark" ? "bg-slate-900" : ""}>Gestão de agenda</option>
+                          {PERFIS.map((p) => (
+                            <option key={p.valor} value={p.valor} className={theme === "dark" ? "bg-slate-900" : ""}>{p.nome}</option>
+                          ))}
                         </select>
                       </td>
                       <td className={`${ui.td} text-right rounded-r-xl`}>

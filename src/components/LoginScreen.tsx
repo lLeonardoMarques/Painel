@@ -316,11 +316,15 @@ export default function LoginScreen({
 
       if (rawRole) {
         const rStr = String(rawRole).toLowerCase();
-        if (rStr.includes("admin") || rStr.includes("adm")) {
+        if (rStr.includes("admin") || rStr === "adm") {
           role = "admin";
         } else if (rStr.includes("ppcp")) {
           role = "ppcp";
-        } else if (rStr.includes("ga")) {
+        } else if (rStr.includes("orcamento")) {
+          role = "orcamento";
+        } else if (rStr.includes("operacoes")) {
+          role = "operacoes";
+        } else if (rStr === "ga" || rStr.includes("abastecimento")) {
           role = "ga";
         }
       } else {

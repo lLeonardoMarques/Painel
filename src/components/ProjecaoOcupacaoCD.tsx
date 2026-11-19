@@ -15,6 +15,8 @@ interface ProjecaoOcupacaoCDProps {
   theme?: "light" | "dark";
   showNotification?: (msg: string) => void;
   onPageChange?: (page: string) => void;
+  /** Só o ADM edita o planejado e as simulações; os demais perfis só visualizam. */
+  podeEditar?: boolean;
 }
 
 type Tipo = "REALIZADO" | "PROJETADO" | "SEM_DADOS";
@@ -192,7 +194,7 @@ async function chamar<T>(path: string, init?: RequestInit): Promise<T> {
   return (r.status === 204 ? null : await r.json()) as T;
 }
 
-export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }: ProjecaoOcupacaoCDProps) {
+export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification, podeEditar = false }: ProjecaoOcupacaoCDProps) {
   const isDark = theme === "dark";
   const hojeLocal = iso(new Date());
 
@@ -319,7 +321,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   };
 
   const editavel = (d: Dia, ed?: boolean) =>
-    !!ed && cat !== "TODAS" && d.tipo !== "REALIZADO" && d.data > hoje && !!fluxoEdicao;
+    podeEditar && !!ed && cat !== "TODAS" && d.tipo !== "REALIZADO" && d.data > hoje && !!fluxoEdicao;
 
   /** Na simulação, o que já foi digitado nela (por fluxo e dia). */
   const ajusteSim = (data: string) =>
@@ -423,7 +425,8 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
   const r = proj?.resumo;
   const ultimo = proj?.dias[proj.dias.length - 1];
   const dicas: string[] = [];
-  if (cat === "TODAS") dicas.push('Com "Todas as categorias" a tabela mostra a soma e não é editável.');
+  if (!podeEditar) dicas.push("Somente visualização: o seu perfil não altera o planejado nem as simulações.");
+  else if (cat === "TODAS") dicas.push('Com "Todas as categorias" a tabela mostra a soma e não é editável.');
   else {
     if (fluxosCat.length > 1 && fluxo === "TOTAL") dicas.push("Para editar, escolha o fluxo (Limpeza ou Perfumaria).");
     if (sim) dicas.push("Simulação: digite veículos e caixas de amanhã em diante e salve. Os parâmetros não mudam na simulação. A base oficial só muda ao aplicar a simulação (painel abaixo).");
@@ -494,7 +497,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
               className={`${campo} cursor-pointer`}>
               <option value="" className={optCls}>Base oficial</option>
               {sims.map((s) => <option key={s.id} value={String(s.id)} className={optCls}>Simulação: {s.nome}</option>)}
-              <option value="__nova" className={optCls}>+ Nova simulação…</option>
+              {podeEditar && <option value="__nova" className={optCls}>+ Nova simulação…</option>}
             </select>
           </div>
         </div>
@@ -571,7 +574,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
                 {COLS.map((c) => (
                   <th key={c.k}
                     className={`${th} text-right last:rounded-r-xl ${
-                      c.ed && cat !== "TODAS" ?"text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"
+                      podeEditar && c.ed && cat !== "TODAS" ?"text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"
                     }`}>
                     {c.t}
                   </th>
@@ -644,7 +647,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
             Veículos = agenda útil × % recebimento (+ remunerado + backlog) · ocupação = dia anterior (real, se houver) + recebidos − expedidos.{" "}
             {sim ? "Campo vazio volta ao valor da base oficial." : "Campo vazio volta ao calculado."}
           </span>
-          <div className="flex items-center gap-2">
+          {podeEditar && <div className="flex items-center gap-2">
             {Object.keys(pendFluxo).length > 0 && <span className="font-semibold text-amber-600">Alterações não salvas</span>}
             <button type="button" className={btn} onClick={desfazer} disabled={cat === "TODAS" || !fluxoEdicao}>
               <RotateCcw className="h-3.5 w-3.5" /> {sim ? "Limpar simulação desta visão" : "Desfazer ajustes desta visão"}
@@ -652,7 +655,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
             <button type="button" className={btnPrimario} onClick={salvarPlanejado} disabled={!Object.keys(pendFluxo).length || salvando}>
               <Save className="h-3.5 w-3.5" /> {sim ? "Salvar simulação" : "Salvar"}
             </button>
-          </div>
+          </div>}
         </div>
       </section>
 
@@ -668,6 +671,7 @@ export default function ProjecaoOcupacaoCD({ theme = "dark", showNotification }:
           simDef={simDef}
           comp={comp}
           temPendente={temPendente}
+          podeEditar={podeEditar}
           onSalvo={async () => {
             setSims(await chamar<SimulacaoResumo[]>("/simulacoes"));
             setRecarregar((n) => n + 1);
@@ -889,6 +893,7 @@ interface PainelSimulacaoProps {
   simDef: SimulacaoDetalhe;
   comp: Comparativo;
   temPendente: boolean;
+  podeEditar: boolean;
   onSalvo: () => void;
   onAplicado: (dias: number, ignorados: number) => void;
   onExcluido: () => void;
@@ -983,7 +988,7 @@ function PainelSimulacao(p: PainelSimulacaoProps) {
             {aplicada && ` · aplicada na base oficial em ${aplicada.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {p.podeEditar && <div className="flex flex-wrap gap-2">
           <button type="button" className={`${p.btn} text-red-600 dark:text-red-400`} onClick={excluir} disabled={ocupado}>
             <Trash2 className="h-3.5 w-3.5" /> Excluir
           </button>
@@ -993,16 +998,16 @@ function PainelSimulacao(p: PainelSimulacaoProps) {
           <button type="button" className={p.btnPrimario} onClick={aplicar} disabled={ocupado || !ajustes.length}>
             <CheckCircle2 className="h-3.5 w-3.5" /> Aplicar na base oficial
           </button>
-        </div>
+        </div>}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label htmlFor="sim-nome" className={rot}>Nome</label>
-          <input id="sim-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={p.campo} />
+          <input id="sim-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} readOnly={!p.podeEditar} className={p.campo} />
         </div>
         <div>
           <label htmlFor="sim-desc" className={rot}>Descrição</label>
-          <input id="sim-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={1000} className={p.campo} />
+          <input id="sim-desc" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={1000} readOnly={!p.podeEditar} className={p.campo} />
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">

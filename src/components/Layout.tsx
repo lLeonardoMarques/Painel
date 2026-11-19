@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "motion/react";
+import { NOME_PERFIL, UserRole } from "../types";
 import {
   BarChart3,
   TrendingUp,
@@ -29,6 +30,10 @@ import {
   CornerDownLeft,
   Warehouse,
   Home,
+  Wallet,
+  Inbox,
+  PlusCircle,
+  ListChecks,
 } from "lucide-react";
 
 export interface LayoutProps {
@@ -97,6 +102,15 @@ const PFA_MENU: { modo: string; label: string; itens: NavItem[] }[] = [
   },
 ];
 
+// Recebimento remunerado: pedido (Abastecimento) -> aprovação (ADM) -> condição especial -> Gestão Orçamentária
+const REMUNERADO_NAV: NavItem[] = [
+  { id: "remunerado/pendencias", label: "Minhas pendências", icon: Inbox, hint: "O que está esperando o seu perfil" },
+  { id: "remunerado/nova", label: "Nova solicitação", icon: PlusCircle, hint: "Pedir veículos remunerados" },
+  { id: "remunerado/todas", label: "Todas as solicitações", icon: ListChecks, hint: "Histórico completo" },
+];
+/** Só ADM e Gestão de Abastecimento pedem remunerado. */
+const podePedirRemunerado = (role?: string) => role === "admin" || role === "ga";
+
 const ADMIN_NAV: NavItem[] = [
   { id: "user-control", label: "Usuários e acessos", icon: Users, hint: "Aprovação de perfis" },
   { id: "parametros", label: "Parâmetros", icon: SlidersHorizontal, hint: "Parâmetros S&OP" },
@@ -139,15 +153,22 @@ export default function Layout({
   const [pfaModoAberto, setPfaModoAberto] = useState(() => currentPage.split("/")[1] || "planejamento");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
-  const [flyout, setFlyout] = useState<{ group: "analytics" | "pfa"; top: number } | null>(null);
+  const [flyout, setFlyout] = useState<{ group: "analytics" | "pfa" | "remunerado"; top: number } | null>(null);
+  const [remuneradoOpen, setRemuneradoOpen] = useState(() => currentPage.startsWith("remunerado/"));
 
   const dark = theme === "dark";
   const isAdmin = user?.role === "admin";
-  const canAnalytics = user?.role !== "ga";
+  // todos os perfis visualizam as análises; só a Administração é exclusiva do ADM
+  const canAnalytics = !!user;
+  const remuneradoNav = useMemo(
+    () => REMUNERADO_NAV.filter((i) => i.id !== "remunerado/nova" || podePedirRemunerado(user?.role)),
+    [user?.role]
+  );
+  const remuneradoActive = currentPage.startsWith("remunerado/");
   const analyticsActive = ANALYTICS_PAGES.has(currentPage);
   const pfaActive = currentPage.startsWith("pfa/");
   const displayName = user?.name || user?.username || "Operador";
-  const roleName = isAdmin ? "Administrador" : user?.role === "ga" ? "Gestão de agenda" : "PPCP";
+  const roleName = NOME_PERFIL[(user?.role || "ppcp") as UserRole] || "PPCP";
   const initials = String(displayName)
     .split(/\s+/)
     .filter(Boolean)
@@ -168,6 +189,7 @@ export default function Layout({
 
   useEffect(() => {
     if (ANALYTICS_PAGES.has(currentPage)) setAnalyticsOpen(true);
+    if (currentPage.startsWith("remunerado/")) setRemuneradoOpen(true);
     if (currentPage.startsWith("pfa/")) {
       setPfaOpen(true);
       setPfaModoAberto(currentPage.split("/")[1]);
@@ -212,9 +234,10 @@ export default function Layout({
       ANALYTICS_NAV.forEach((i) => list.push({ ...i, section: "Analítico" }));
       PFA_MENU.forEach((g) => g.itens.forEach((i) => list.push({ ...i, section: `PFA · ${g.label}` })));
     }
+    remuneradoNav.forEach((i) => list.push({ ...i, section: "Recebimento remunerado" }));
     if (isAdmin) ADMIN_NAV.forEach((i) => list.push({ ...i, section: "Administração" }));
     return list;
-  }, [canAnalytics, isAdmin]);
+  }, [canAnalytics, isAdmin, remuneradoNav]);
 
   const currentLabel = useMemo(() => {
     const found = searchable.find((s) => s.id === currentPage);
@@ -311,7 +334,7 @@ export default function Layout({
 
   /** Grupo recolhível (Analítico, PFA). No menu compacto abre um painel flutuante ao lado. */
   const renderGroup = (
-    key: "analytics" | "pfa",
+    key: "analytics" | "pfa" | "remunerado",
     label: string,
     Icon: IconType,
     content: React.ReactNode,
@@ -535,6 +558,25 @@ export default function Layout({
           </>
         )}
 
+        {user && (
+          <>
+            {sectionLabel("Recebimento remunerado", compact)}
+            <div className="space-y-0.5">
+              {renderGroup(
+                "remunerado",
+                "Remunerado",
+                Wallet,
+                <>{remuneradoNav.map((item) => renderLink(item, false, true))}</>,
+                remuneradoOpen,
+                setRemuneradoOpen,
+                remuneradoActive,
+                compact,
+                remuneradoNav.length
+              )}
+            </div>
+          </>
+        )}
+
         {isAdmin && (
           <>
             {sectionLabel("Administração", compact)}
@@ -688,10 +730,14 @@ export default function Layout({
             >
               <LayoutGroup id="flyout">
                 <p className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-900 dark:text-slate-100">
-                  {flyout.group === "analytics" ? "Analítico" : "PFA"}
+                  {flyout.group === "analytics" ? "Analítico" : flyout.group === "remunerado" ? "Remunerado" : "PFA"}
                 </p>
                 <div className="space-y-0.5">
-                  {flyout.group === "analytics" ? ANALYTICS_NAV.map((item) => renderLink(item, false, true)) : renderPfa(true)}
+                  {flyout.group === "analytics"
+                    ? ANALYTICS_NAV.map((item) => renderLink(item, false, true))
+                    : flyout.group === "remunerado"
+                    ? remuneradoNav.map((item) => renderLink(item, false, true))
+                    : renderPfa(true)}
                 </div>
               </LayoutGroup>
             </motion.div>

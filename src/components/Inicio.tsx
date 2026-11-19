@@ -240,7 +240,6 @@ export default function Inicio({ user, onPageChange }: InicioProps) {
       const p = PAGINAS[id];
       if (!p) return false;
       if (p.admin && user?.role !== "admin") return false;
-      if (p.analise && user?.role === "ga") return false;
       return true;
     };
     const maisUsados = Object.entries(visits)

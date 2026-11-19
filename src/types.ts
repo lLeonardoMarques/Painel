@@ -9,7 +9,16 @@ export interface Capacidade {
   recebimentoRemunerado?: number | null;
 }
 
-export type UserRole = "admin" | "ppcp" | "ga";
+/** admin = ADM (vê e edita); os demais só visualizam (e fazem a sua etapa no recebimento remunerado). */
+export type UserRole = "admin" | "ppcp" | "ga" | "operacoes" | "orcamento";
+
+export const NOME_PERFIL: Record<UserRole, string> = {
+  admin: "Administrador",
+  ppcp: "PPCP",
+  ga: "Gestão de Abastecimento",
+  operacoes: "Operações",
+  orcamento: "Gestão Orçamentária",
+};
 
 export interface User {
   username: string;
